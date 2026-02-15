@@ -67,7 +67,7 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_events_node ON events(node_id);
   `);
 
-  // Migration: add depth column if it doesn't exist (for existing databases)
+  // [sl:yBBVr4wcgVfWA_w8U8hQo] Migration: add depth column if it doesn't exist
   const hasDepth = db.prepare(
     "SELECT COUNT(*) as cnt FROM pragma_table_info('nodes') WHERE name = 'depth'"
   ).get() as { cnt: number };

@@ -90,7 +90,7 @@ const TOOLS = [
   {
     name: "swimlanes_next",
     description:
-      "Get the next actionable node — an unresolved leaf with all dependencies resolved. Ranked by priority (from properties), depth, and least-recently-updated. Returns the node with ancestor chain, context links, and resolved dependency info. Use claim=true to soft-lock the node.",
+      "Get the next actionable node — an unresolved leaf with all dependencies resolved. Ranked by priority (from properties), depth, and least-recently-updated. Returns the node with ancestor chain, context links, and resolved dependency info. Use claim=true to soft-lock the node. When modifying code for this task, annotate key changes with // [sl:nodeId] so future agents can trace code back to this task.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -115,7 +115,7 @@ const TOOLS = [
   {
     name: "swimlanes_context",
     description:
-      "Deep-read a node and its neighborhood: ancestors (scope chain), children tree (to configurable depth), dependency graph (what it depends on, what depends on it).",
+      "Deep-read a node and its neighborhood: ancestors (scope chain), children tree (to configurable depth), dependency graph (what it depends on, what depends on it). Look for // [sl:nodeId] annotations in source files to find code tied to specific tasks.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -131,7 +131,7 @@ const TOOLS = [
   {
     name: "swimlanes_update",
     description:
-      "Update one or more nodes. Can change resolved, state, summary, properties (merged), context_links, and add evidence. When resolving nodes, returns newly_actionable — nodes that became unblocked.",
+      "Update one or more nodes. Can change resolved, state, summary, properties (merged), context_links, and add evidence. When resolving nodes, returns newly_actionable — nodes that became unblocked. IMPORTANT: When resolving a task, always include add_evidence with what was done (type: 'git' for commits, 'note' for implementation details) and add_context_links for files you modified. This evidence is how future agents understand what happened.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -152,6 +152,7 @@ const TOOLS = [
               add_context_links: {
                 type: "array",
                 items: { type: "string" },
+                description: "Files modified or created for this task. Add when resolving so future agents know what was touched.",
               },
               remove_context_links: {
                 type: "array",
@@ -159,11 +160,12 @@ const TOOLS = [
               },
               add_evidence: {
                 type: "array",
+                description: "Evidence of work done. Always add when resolving. Types: 'git' (commit hash + summary), 'note' (what was implemented and why), 'test' (test results).",
                 items: {
                   type: "object",
                   properties: {
-                    type: { type: "string" },
-                    ref: { type: "string" },
+                    type: { type: "string", description: "Evidence type: git, note, test, or custom" },
+                    ref: { type: "string", description: "The evidence content — commit ref, implementation note, test result" },
                   },
                   required: ["type", "ref"],
                 },

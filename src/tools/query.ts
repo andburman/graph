@@ -38,7 +38,7 @@ export interface QueryResult {
   next_cursor?: string;
 }
 
-// Get all descendant IDs of a node using recursive CTE
+// [sl:tfMDHhmJSXd5TPgwD2ZC6] Descendant lookup via recursive CTE (replaced JS BFS)
 function getDescendantIds(nodeId: string): string[] {
   const db = getDb();
   const rows = db

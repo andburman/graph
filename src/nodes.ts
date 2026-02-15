@@ -42,7 +42,7 @@ export function createNode(input: CreateNodeInput): Node {
   const now = new Date().toISOString();
   const id = nanoid();
 
-  // Compute depth from parent
+  // [sl:yBBVr4wcgVfWA_w8U8hQo] Compute depth from parent
   let depth = 0;
   if (input.parent) {
     const parentRow = db.prepare("SELECT depth FROM nodes WHERE id = ?").get(input.parent) as { depth: number } | undefined;

@@ -77,8 +77,8 @@ export function handleNext(
     }
   }
 
-  // Ranking: priority DESC, depth DESC, updated_at ASC
-  // Depth is cached on the node, priority extracted via json_extract — all in SQL
+  // [sl:md48WyMYFlOf4KP99vmtv] Ranking fully in SQL — never loads more than N rows
+  // Depth is cached on the node, priority extracted via json_extract
   query += `
     ORDER BY
       COALESCE(CAST(json_extract(n.properties, '$.priority') AS REAL), 0) DESC,

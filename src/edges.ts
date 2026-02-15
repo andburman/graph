@@ -156,10 +156,9 @@ export function getEdgesTo(nodeId: string, type?: string): Edge[] {
     .all(nodeId) as Edge[];
 }
 
-// --- Find newly actionable nodes ---
-// Given specific resolved node IDs, find nodes that directly depended on them
-// and are now actionable (all deps resolved, no unresolved children).
-// Falls back to project-wide scan when no specific IDs provided.
+// [sl:uRocbNC_bArUXGr908Qbk] Find newly actionable nodes
+// Targeted: accepts resolved node IDs, checks only direct dependents.
+// Falls back to project-wide scan when no IDs provided.
 
 export function findNewlyActionable(
   project: string,
