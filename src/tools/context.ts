@@ -1,6 +1,7 @@
 import { getNodeOrThrow, getChildren, getAncestors } from "../nodes.js";
 import { getEdgesFrom, getEdgesTo } from "../edges.js";
 import { getNode } from "../nodes.js";
+import { requireString, optionalNumber } from "../validate.js";
 import type { Node } from "../types.js";
 
 export interface ContextInput {
@@ -52,16 +53,17 @@ function buildNodeTree(nodeId: string, currentDepth: number, maxDepth: number): 
 }
 
 export function handleContext(input: ContextInput): ContextResult {
-  const depth = input.depth ?? 2;
-  const node = getNodeOrThrow(input.node_id);
-  const ancestors = getAncestors(input.node_id);
+  const nodeId = requireString(input?.node_id, "node_id");
+  const depth = optionalNumber(input?.depth, "depth", 0, 10) ?? 2;
+  const node = getNodeOrThrow(nodeId);
+  const ancestors = getAncestors(nodeId);
 
   // Build children tree
-  const children = buildNodeTree(input.node_id, 0, depth);
+  const children = buildNodeTree(nodeId, 0, depth);
 
   // Get dependency edges
-  const depsOut = getEdgesFrom(input.node_id, "depends_on");
-  const depsIn = getEdgesTo(input.node_id, "depends_on");
+  const depsOut = getEdgesFrom(nodeId, "depends_on");
+  const depsIn = getEdgesTo(nodeId, "depends_on");
 
   const depends_on = depsOut.map((edge) => {
     const target = getNode(edge.to_node);

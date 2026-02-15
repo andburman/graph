@@ -1,6 +1,6 @@
 import { updateNode } from "../nodes.js";
 import { findNewlyActionable } from "../edges.js";
-import { getNode } from "../nodes.js";
+import { requireArray, requireString } from "../validate.js";
 
 export interface UpdateEntry {
   node_id: string;
@@ -23,11 +23,23 @@ export interface UpdateResult {
 }
 
 export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
+  const updates = requireArray<UpdateEntry>(input?.updates, "updates");
+
+  for (let i = 0; i < updates.length; i++) {
+    requireString(updates[i].node_id, `updates[${i}].node_id`);
+    if (updates[i].add_evidence) {
+      for (let j = 0; j < updates[i].add_evidence!.length; j++) {
+        requireString(updates[i].add_evidence![j].type, `updates[${i}].add_evidence[${j}].type`);
+        requireString(updates[i].add_evidence![j].ref, `updates[${i}].add_evidence[${j}].ref`);
+      }
+    }
+  }
+
   const updated: Array<{ node_id: string; rev: number }> = [];
   let anyResolved = false;
   let project: string | null = null;
 
-  for (const entry of input.updates) {
+  for (const entry of updates) {
     const node = updateNode({
       node_id: entry.node_id,
       agent,

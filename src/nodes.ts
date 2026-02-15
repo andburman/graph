@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { getDb } from "./db.js";
 import { logEvent } from "./events.js";
+import { EngineError } from "./validate.js";
 import type { Node, NodeRow, Evidence, FieldChange } from "./types.js";
 
 // --- Row <-> Node conversion ---
@@ -95,7 +96,7 @@ export function getNode(id: string): Node | null {
 export function getNodeOrThrow(id: string): Node {
   const node = getNode(id);
   if (!node) {
-    throw new Error(`Node not found: ${id}`);
+    throw new EngineError("node_not_found", `Node not found: ${id}. Verify the ID is correct and the node hasn't been deleted.`);
   }
   return node;
 }

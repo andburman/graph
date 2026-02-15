@@ -1,4 +1,5 @@
 import { addEdge, removeEdge } from "../edges.js";
+import { requireArray, requireString } from "../validate.js";
 
 export interface ConnectEdgeInput {
   from: string;
@@ -17,10 +18,18 @@ export interface ConnectResult {
 }
 
 export function handleConnect(input: ConnectInput, agent: string): ConnectResult {
+  const edges = requireArray<ConnectEdgeInput>(input?.edges, "edges");
+
+  for (let i = 0; i < edges.length; i++) {
+    requireString(edges[i].from, `edges[${i}].from`);
+    requireString(edges[i].to, `edges[${i}].to`);
+    requireString(edges[i].type, `edges[${i}].type`);
+  }
+
   let applied = 0;
   const rejected: Array<{ from: string; to: string; reason: string }> = [];
 
-  for (const edge of input.edges) {
+  for (const edge of edges) {
     if (edge.type === "parent") {
       rejected.push({
         from: edge.from,

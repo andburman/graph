@@ -1,4 +1,5 @@
 import { getDb } from "../db.js";
+import { requireString, optionalNumber, optionalString } from "../validate.js";
 import type { NodeRow } from "../types.js";
 
 export interface QueryFilter {
@@ -58,32 +59,44 @@ function getDescendantIds(nodeId: string): string[] {
   return ids;
 }
 
-// Compute depth of a node (root = 0)
-function computeDepth(nodeId: string): number {
-  const db = getDb();
-  let depth = 0;
-  let current = db
-    .prepare("SELECT parent FROM nodes WHERE id = ?")
-    .get(nodeId) as { parent: string | null } | undefined;
+// Batch compute depths for multiple nodes using recursive CTE
+function computeDepths(nodeIds: string[]): Map<string, number> {
+  if (nodeIds.length === 0) return new Map();
 
-  while (current?.parent) {
-    depth++;
-    current = db
-      .prepare("SELECT parent FROM nodes WHERE id = ?")
-      .get(current.parent) as { parent: string | null } | undefined;
+  const db = getDb();
+  const depths = new Map<string, number>();
+
+  // Use a single recursive CTE to compute all depths
+  const rows = db
+    .prepare(
+      `WITH RECURSIVE ancestors(id, node_id, depth) AS (
+        SELECT n.id, n.id, 0 FROM nodes n WHERE n.id IN (${nodeIds.map(() => "?").join(",")})
+        UNION ALL
+        SELECT n.parent, a.node_id, a.depth + 1
+        FROM ancestors a JOIN nodes n ON n.id = a.id
+        WHERE n.parent IS NOT NULL
+      )
+      SELECT node_id, MAX(depth) as depth FROM ancestors GROUP BY node_id`
+    )
+    .all(...nodeIds) as Array<{ node_id: string; depth: number }>;
+
+  for (const row of rows) {
+    depths.set(row.node_id, row.depth);
   }
 
-  return depth;
+  return depths;
 }
 
 export function handleQuery(input: QueryInput): QueryResult {
+  const project = requireString(input?.project, "project");
   const db = getDb();
-  const limit = Math.min(input.limit ?? 20, 100);
-  const filter = input.filter;
+  const limit = Math.min(optionalNumber(input?.limit, "limit", 1, 100) ?? 20, 100);
+  const filter = input?.filter;
+  const cursor = optionalString(input?.cursor, "cursor");
 
   // Build WHERE clauses
   const conditions: string[] = ["n.project = ?"];
-  const params: unknown[] = [input.project];
+  const params: unknown[] = [project];
 
   if (filter?.resolved !== undefined) {
     conditions.push("n.resolved = ?");
@@ -159,8 +172,8 @@ export function handleQuery(input: QueryInput): QueryResult {
   }
 
   // Cursor: use created_at + id for stable pagination
-  if (input.cursor) {
-    const [cursorTime, cursorId] = input.cursor.split("|");
+  if (cursor) {
+    const [cursorTime, cursorId] = cursor.split("|");
     conditions.push("(n.created_at > ? OR (n.created_at = ? AND n.id > ?))");
     params.push(cursorTime, cursorTime, cursorId);
   }
@@ -187,13 +200,11 @@ export function handleQuery(input: QueryInput): QueryResult {
   }
 
   // Count total
-  const countQuery = `SELECT COUNT(*) as count FROM nodes n WHERE ${whereClause}`;
-  const countParams = [...params];
-  // Remove cursor params from count
+  // Count total (without cursor filter)
+  const countConditions = cursor ? conditions.slice(0, -1) : conditions;
+  const countParams = cursor ? params.slice(0, -3) : [...params];
   const total = (
-    input.cursor
-      ? db.prepare(`SELECT COUNT(*) as count FROM nodes n WHERE ${conditions.slice(0, -1).join(" AND ")}`).get(...params.slice(0, -3)) as { count: number }
-      : db.prepare(countQuery).get(...countParams) as { count: number }
+    db.prepare(`SELECT COUNT(*) as count FROM nodes n WHERE ${countConditions.join(" AND ")}`).get(...countParams) as { count: number }
   ).count;
 
   // Fetch
@@ -204,13 +215,16 @@ export function handleQuery(input: QueryInput): QueryResult {
   const hasMore = rows.length > limit;
   const slice = hasMore ? rows.slice(0, limit) : rows;
 
+  // Batch compute depths for all results
+  const depths = computeDepths(slice.map((r) => r.id));
+
   const nodes: QueryResultNode[] = slice.map((row) => ({
     id: row.id,
     summary: row.summary,
     resolved: row.resolved === 1,
     state: row.state ? JSON.parse(row.state) : null,
     parent: row.parent,
-    depth: computeDepth(row.id),
+    depth: depths.get(row.id) ?? 0,
     properties: JSON.parse(row.properties),
   }));
 

@@ -1,6 +1,7 @@
 import { getDb } from "../db.js";
 import { getNode, getAncestors, updateNode } from "../nodes.js";
 import { getEdgesFrom } from "../edges.js";
+import { requireString, optionalNumber, optionalBoolean } from "../validate.js";
 import type { Node, NodeRow, Evidence } from "../types.js";
 
 export interface NextInput {
@@ -33,8 +34,10 @@ export function handleNext(
   agent: string,
   claimTtlMinutes: number = 60
 ): NextResult {
+  const project = requireString(input?.project, "project");
+  const count = optionalNumber(input?.count, "count", 1, 50) ?? 1;
+  const claim = optionalBoolean(input?.claim, "claim") ?? false;
   const db = getDb();
-  const count = input.count ?? 1;
 
   // Find actionable nodes: unresolved, leaf (no unresolved children), all deps resolved
   let query = `
@@ -50,7 +53,7 @@ export function handleNext(
     )
   `;
 
-  const params: unknown[] = [input.project];
+  const params: unknown[] = [project];
 
   // Skip nodes claimed by other agents (if claim TTL hasn't expired)
   const claimCutoff = new Date(
@@ -79,22 +82,29 @@ export function handleNext(
   // Fetch candidates, compute depth in JS, then sort
   const rows = db.prepare(query).all(...params) as NodeRow[];
 
-  // Compute depth and priority for sorting
+  // Batch compute depths using recursive CTE
+  const depthMap = new Map<string, number>();
+  if (rows.length > 0) {
+    const nodeIds = rows.map((r) => r.id);
+    const depthRows = db
+      .prepare(
+        `WITH RECURSIVE ancestors(id, node_id, depth) AS (
+          SELECT n.id, n.id, 0 FROM nodes n WHERE n.id IN (${nodeIds.map(() => "?").join(",")})
+          UNION ALL
+          SELECT n.parent, a.node_id, a.depth + 1
+          FROM ancestors a JOIN nodes n ON n.id = a.id
+          WHERE n.parent IS NOT NULL
+        )
+        SELECT node_id, MAX(depth) as depth FROM ancestors GROUP BY node_id`
+      )
+      .all(...nodeIds) as Array<{ node_id: string; depth: number }>;
+    for (const r of depthRows) depthMap.set(r.node_id, r.depth);
+  }
+
   const candidates = rows.map((row) => {
     const props = JSON.parse(row.properties);
     const priority = typeof props.priority === "number" ? props.priority : 0;
-
-    // Compute depth
-    let depth = 0;
-    let parentId = row.parent;
-    while (parentId) {
-      depth++;
-      const parent = db
-        .prepare("SELECT parent FROM nodes WHERE id = ?")
-        .get(parentId) as { parent: string | null } | undefined;
-      parentId = parent?.parent ?? null;
-    }
-
+    const depth = depthMap.get(row.id) ?? 0;
     return { row, priority, depth };
   });
 
@@ -135,7 +145,7 @@ export function handleNext(
       .filter(Boolean) as NextResultNode["resolved_deps"];
 
     // Claim if requested
-    if (input.claim) {
+    if (claim) {
       updateNode({
         node_id: node.id,
         agent,
@@ -147,7 +157,7 @@ export function handleNext(
     }
 
     return {
-      node: input.claim ? getNode(row.id)! : node,
+      node: claim ? getNode(row.id)! : node,
       ancestors: ancestors.map((a) => ({ id: a.id, summary: a.summary })),
       context_links: {
         self: node.context_links,

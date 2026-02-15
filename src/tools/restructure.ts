@@ -2,6 +2,7 @@ import { getDb } from "../db.js";
 import { getNodeOrThrow, getNode, getChildren, updateNode } from "../nodes.js";
 import { getEdgesFrom, getEdgesTo, findNewlyActionable } from "../edges.js";
 import { logEvent } from "../events.js";
+import { requireArray, requireString } from "../validate.js";
 import type { Evidence } from "../types.js";
 
 export interface MoveOp {
@@ -202,13 +203,32 @@ export function handleRestructure(
   input: RestructureInput,
   agent: string
 ): RestructureResult {
+  const operations = requireArray<RestructureOp>(input?.operations, "operations");
+
+  for (let i = 0; i < operations.length; i++) {
+    const op = operations[i];
+    requireString(op.op, `operations[${i}].op`);
+    if (op.op === "move") {
+      requireString((op as MoveOp).node_id, `operations[${i}].node_id`);
+      requireString((op as MoveOp).new_parent, `operations[${i}].new_parent`);
+    } else if (op.op === "merge") {
+      requireString((op as MergeOp).source, `operations[${i}].source`);
+      requireString((op as MergeOp).target, `operations[${i}].target`);
+    } else if (op.op === "drop") {
+      requireString((op as DropOp).node_id, `operations[${i}].node_id`);
+      requireString((op as DropOp).reason, `operations[${i}].reason`);
+    } else {
+      throw new Error(`Unknown operation: ${op.op}`);
+    }
+  }
+
   const db = getDb();
   let applied = 0;
   const details: Array<{ op: string; node_id: string; result: string }> = [];
   let project: string | null = null;
 
   const transaction = db.transaction(() => {
-    for (const op of input.operations) {
+    for (const op of operations) {
       let detail: { node_id: string; result: string };
 
       switch (op.op) {

@@ -1,5 +1,6 @@
 import { getEvents } from "../events.js";
 import { getNodeOrThrow } from "../nodes.js";
+import { requireString, optionalNumber, optionalString } from "../validate.js";
 
 export interface HistoryInput {
   node_id: string;
@@ -18,14 +19,13 @@ export interface HistoryResult {
 }
 
 export function handleHistory(input: HistoryInput): HistoryResult {
-  // Validate node exists
-  getNodeOrThrow(input.node_id);
+  const nodeId = requireString(input?.node_id, "node_id");
+  const limit = optionalNumber(input?.limit, "limit", 1, 100) ?? 20;
+  const cursor = optionalString(input?.cursor, "cursor");
 
-  const { events, next_cursor } = getEvents(
-    input.node_id,
-    input.limit ?? 20,
-    input.cursor
-  );
+  getNodeOrThrow(nodeId);
+
+  const { events, next_cursor } = getEvents(nodeId, limit, cursor);
 
   const result: HistoryResult = {
     events: events.map((e) => ({

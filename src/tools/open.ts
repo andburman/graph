@@ -1,4 +1,5 @@
 import { createNode, getProjectRoot, listProjects, getProjectSummary } from "../nodes.js";
+import { optionalString } from "../validate.js";
 import type { Node } from "../types.js";
 
 export interface OpenInput {
@@ -29,21 +30,24 @@ export type OpenResult =
     };
 
 export function handleOpen(input: OpenInput, agent: string): OpenResult {
-  if (!input.project) {
+  const project = optionalString(input?.project, "project");
+  const goal = optionalString(input?.goal, "goal");
+
+  if (!project) {
     return { projects: listProjects() };
   }
 
-  let root = getProjectRoot(input.project);
+  let root = getProjectRoot(project);
 
   if (!root) {
     root = createNode({
-      project: input.project,
-      summary: input.goal ?? input.project,
+      project,
+      summary: goal ?? project,
       agent,
     });
   }
 
-  const summary = getProjectSummary(input.project);
+  const summary = getProjectSummary(project);
 
   return { root, summary };
 }

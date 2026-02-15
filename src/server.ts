@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { initDb, closeDb } from "./db.js";
+import { ValidationError, EngineError } from "./validate.js";
 import { handleOpen } from "./tools/open.js";
 import { handlePlan } from "./tools/plan.js";
 import { handleUpdate } from "./tools/update.js";
@@ -364,9 +365,18 @@ export async function startServer(): Promise<void> {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
+      const code =
+        error instanceof ValidationError
+          ? "validation_error"
+          : error instanceof EngineError
+            ? (error as EngineError).code
+            : "error";
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify({ error: message }) },
+          {
+            type: "text" as const,
+            text: JSON.stringify({ error: message, code }),
+          },
         ],
         isError: true,
       };

@@ -1,6 +1,7 @@
 import { getDb } from "../db.js";
 import { createNode, getNode } from "../nodes.js";
 import { addEdge } from "../edges.js";
+import { requireArray, requireString, ValidationError } from "../validate.js";
 
 export interface PlanNodeInput {
   ref: string;
@@ -21,6 +22,14 @@ export interface PlanResult {
 
 export function handlePlan(input: PlanInput, agent: string): PlanResult {
   const db = getDb();
+  const nodes = requireArray<PlanNodeInput>(input?.nodes, "nodes");
+
+  // Validate each node has required fields
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    requireString(n.ref, `nodes[${i}].ref`);
+    requireString(n.summary, `nodes[${i}].summary`);
+  }
 
   // Ref -> real ID mapping
   const refMap = new Map<string, string>();
@@ -28,7 +37,7 @@ export function handlePlan(input: PlanInput, agent: string): PlanResult {
 
   // Validate refs are unique
   const refs = new Set<string>();
-  for (const node of input.nodes) {
+  for (const node of nodes) {
     if (refs.has(node.ref)) {
       throw new Error(`Duplicate ref in batch: ${node.ref}`);
     }
@@ -38,7 +47,7 @@ export function handlePlan(input: PlanInput, agent: string): PlanResult {
   // Run atomically
   const transaction = db.transaction(() => {
     // First pass: create all nodes
-    for (const nodeInput of input.nodes) {
+    for (const nodeInput of nodes) {
       // Resolve parent
       let parentId: string | undefined;
       if (nodeInput.parent_ref) {
@@ -84,7 +93,7 @@ export function handlePlan(input: PlanInput, agent: string): PlanResult {
     }
 
     // Second pass: create dependency edges
-    for (const nodeInput of input.nodes) {
+    for (const nodeInput of nodes) {
       if (!nodeInput.depends_on || nodeInput.depends_on.length === 0) continue;
 
       const fromId = refMap.get(nodeInput.ref)!;
