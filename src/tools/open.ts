@@ -10,6 +10,7 @@ export interface OpenInput {
 export type OpenResult =
   | {
       projects: Array<{
+        project: string;
         id: string;
         summary: string;
         total: number;
@@ -19,6 +20,7 @@ export type OpenResult =
       }>;
     }
   | {
+      project: string;
       root: Node;
       summary: {
         total: number;
@@ -49,5 +51,5 @@ export function handleOpen(input: OpenInput, agent: string): OpenResult {
 
   const summary = getProjectSummary(project);
 
-  return { root, summary };
+  return { project, root, summary };
 }

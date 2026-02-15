@@ -32,7 +32,7 @@ const TOOLS = [
       properties: {
         project: {
           type: "string",
-          description: "Project slug. Omit to list all projects.",
+          description: "Project name (e.g. 'my-project'). Omit to list all projects.",
         },
         goal: {
           type: "string",
@@ -94,7 +94,7 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        project: { type: "string", description: "Project to search within" },
+        project: { type: "string", description: "Project name (e.g. 'my-project'), not a node ID" },
         filter: {
           type: "object",
           description: "Match against node properties",
@@ -213,7 +213,7 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        project: { type: "string" },
+        project: { type: "string", description: "Project name (e.g. 'my-project'), not a node ID" },
         filter: {
           type: "object",
           properties: {

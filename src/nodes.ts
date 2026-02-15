@@ -142,6 +142,7 @@ export function getProjectRoot(project: string): Node | null {
 }
 
 export function listProjects(): Array<{
+  project: string;
   id: string;
   summary: string;
   total: number;
@@ -166,6 +167,7 @@ export function listProjects(): Array<{
       .get(root.project) as { total: number; resolved: number };
 
     return {
+      project: root.project,
       id: root.id,
       summary: root.summary,
       total: counts.total,
