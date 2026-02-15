@@ -18,7 +18,7 @@ Swimlanes gives agents what they actually need:
 ## Install
 
 ```bash
-git clone https://github.com/your-org/swimlanes.git
+git clone https://github.com/andburman/swimlanes.git
 cd swimlanes
 npm install
 npm run build
