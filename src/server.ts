@@ -16,6 +16,9 @@ import { handleNext } from "./tools/next.js";
 import { handleRestructure } from "./tools/restructure.js";
 import { handleHistory } from "./tools/history.js";
 import { handleOnboard } from "./tools/onboard.js";
+import { handleAgentConfig } from "./tools/agent-config.js";
+import { getLicenseTier, type Tier } from "./license.js";
+import { checkNodeLimit, checkProjectLimit, capEvidenceLimit, checkScope } from "./gates.js";
 
 // Config from env
 const AGENT_IDENTITY = process.env.GRAPH_AGENT ?? "default-agent";
@@ -313,11 +316,23 @@ const TOOLS = [
       required: ["project"],
     },
   },
+  {
+    name: "graph_agent_config",
+    description:
+      "Returns the graph-optimized agent configuration file for Claude Code. Pro tier only. Save the returned content to .claude/agents/graph.md to enable the graph workflow agent.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
 ];
 
 export async function startServer(): Promise<void> {
   // Init database
   initDb(DB_PATH);
+
+  // [sl:N0IDVJQIhENQFsov6-Lhg] Resolve license tier once at startup
+  const tier: Tier = getLicenseTier(DB_PATH);
 
   const server = new Server(
     { name: "graph", version: "0.1.0" },
@@ -337,17 +352,46 @@ export async function startServer(): Promise<void> {
       let result: unknown;
 
       switch (name) {
-        case "graph_open":
-          result = handleOpen(args as any, AGENT_IDENTITY);
+        case "graph_open": {
+          const openArgs = args as any;
+          // Gate: check project limit when creating a new project
+          if (openArgs?.project) {
+            const { getProjectRoot } = await import("./nodes.js");
+            if (!getProjectRoot(openArgs.project)) {
+              checkProjectLimit(tier);
+            }
+          }
+          result = handleOpen(openArgs, AGENT_IDENTITY);
           break;
+        }
 
-        case "graph_plan":
-          result = handlePlan(args as any, AGENT_IDENTITY);
+        case "graph_plan": {
+          const planArgs = args as any;
+          // Gate: check node limit before creating nodes
+          if (planArgs?.nodes?.length > 0) {
+            // Determine project from the first node's parent
+            const { getNode } = await import("./nodes.js");
+            const firstParent = planArgs.nodes[0]?.parent_ref;
+            if (firstParent && typeof firstParent === "string" && !planArgs.nodes.some((n: any) => n.ref === firstParent)) {
+              const parentNode = getNode(firstParent);
+              if (parentNode) {
+                checkNodeLimit(tier, parentNode.project, planArgs.nodes.length);
+              }
+            }
+          }
+          result = handlePlan(planArgs, AGENT_IDENTITY);
           break;
+        }
 
-        case "graph_next":
-          result = handleNext(args as any, AGENT_IDENTITY, CLAIM_TTL);
+        case "graph_next": {
+          const nextArgs = args as any;
+          // Gate: strip scope on free tier
+          if (nextArgs?.scope) {
+            nextArgs.scope = checkScope(tier, nextArgs.scope);
+          }
+          result = handleNext(nextArgs, AGENT_IDENTITY, CLAIM_TTL);
           break;
+        }
 
         case "graph_context":
           result = handleContext(args as any);
@@ -373,8 +417,16 @@ export async function startServer(): Promise<void> {
           result = handleHistory(args as any);
           break;
 
-        case "graph_onboard":
-          result = handleOnboard(args as any);
+        case "graph_onboard": {
+          const onboardArgs = args as any;
+          // Gate: cap evidence limit on free tier
+          onboardArgs.evidence_limit = capEvidenceLimit(tier, onboardArgs?.evidence_limit);
+          result = handleOnboard(onboardArgs);
+          break;
+        }
+
+        case "graph_agent_config":
+          result = handleAgentConfig(DB_PATH);
           break;
 
         default:

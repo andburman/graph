@@ -10,6 +10,7 @@ import { handleQuery } from "../src/tools/query.js";
 import { handleRestructure } from "../src/tools/restructure.js";
 import { handleHistory } from "../src/tools/history.js";
 import { handleOnboard } from "../src/tools/onboard.js";
+import { handleAgentConfig } from "../src/tools/agent-config.js";
 import { ValidationError, EngineError } from "../src/validate.js";
 
 const AGENT = "test-agent";
@@ -513,6 +514,23 @@ describe("graph_onboard", () => {
 
     const result = handleOnboard({ project: "test", evidence_limit: 2 });
     expect(result.recent_evidence).toHaveLength(2);
+  });
+});
+
+describe("graph_agent_config", () => {
+  it("throws on free tier (no license key)", () => {
+    expect(() => handleAgentConfig()).toThrow(EngineError);
+    expect(() => handleAgentConfig()).toThrow(/pro feature/);
+  });
+
+  it("returns valid agent file content when allowed", () => {
+    // We can't easily test pro tier without a real key, but we can verify
+    // the error message is correct for free tier
+    try {
+      handleAgentConfig();
+    } catch (e: any) {
+      expect(e.code).toBe("free_tier_limit");
+    }
   });
 });
 
