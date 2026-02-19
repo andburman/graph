@@ -116,7 +116,17 @@ Comments are a snapshot. Graph turns your codebase into a traceable history of d
 
 ## Install
 
-Add to your Claude Code MCP config (`.mcp.json` in your project root):
+Run this in your project directory:
+
+```bash
+npx -y @graph-tl/graph init
+```
+
+This adds Graph to your `.mcp.json`. Restart Claude Code and you're done.
+
+### Manual setup
+
+If you prefer to configure it yourself, add this to `.mcp.json` in your project root:
 
 ```json
 {
@@ -132,12 +142,15 @@ Add to your Claude Code MCP config (`.mcp.json` in your project root):
 }
 ```
 
-That's it. No cloning, no building. npx handles everything.
+### Configuration
 
-Environment variables (optional):
-- `GRAPH_AGENT` — agent identity, attached to all writes (default: `default-agent`)
-- `GRAPH_DB` — SQLite database path (default: `./graph.db`)
-- `GRAPH_CLAIM_TTL` — soft claim expiry in minutes (default: `60`)
+Environment variables (all optional):
+
+| Variable | Default | Description |
+|---|---|---|
+| `GRAPH_AGENT` | `default-agent` | Agent identity, attached to all writes |
+| `GRAPH_DB` | `./graph.db` | SQLite database path |
+| `GRAPH_CLAIM_TTL` | `60` | Soft claim expiry in minutes |
 
 ## Tools
 
