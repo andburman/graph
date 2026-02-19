@@ -117,7 +117,7 @@ Comments are a snapshot. Graph turns your codebase into a traceable history of d
 ## Install
 
 ```bash
-git clone https://github.com/andburman/graph.git
+git clone https://github.com/Graph-tl/graph.git
 cd graph
 npm install
 npm run build
