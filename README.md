@@ -134,32 +134,7 @@ Add to your Claude Code MCP config (`.mcp.json` in your project root):
 
 That's it. No cloning, no building. npx handles everything.
 
-### From source
-
-```bash
-git clone https://github.com/Graph-tl/graph.git
-cd graph
-npm install
-npm run build
-```
-
-Then point your `.mcp.json` at the local build:
-
-```json
-{
-  "mcpServers": {
-    "graph": {
-      "command": "node",
-      "args": ["./graph/dist/index.js"],
-      "env": {
-        "GRAPH_AGENT": "claude-code"
-      }
-    }
-  }
-}
-```
-
-Environment variables:
+Environment variables (optional):
 - `GRAPH_AGENT` — agent identity, attached to all writes (default: `default-agent`)
 - `GRAPH_DB` — SQLite database path (default: `./graph.db`)
 - `GRAPH_CLAIM_TTL` — soft claim expiry in minutes (default: `60`)
