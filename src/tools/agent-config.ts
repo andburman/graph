@@ -112,6 +112,25 @@ Use \`graph_plan\` to add observation nodes under the project root. Keep them li
 
 Default to "if in doubt, add a node." It's cheap to create and the next session will thank you.
 
+# Blocked status
+
+Nodes can be manually blocked (separate from dependency-blocked). Use this for external blockers:
+
+\`\`\`
+graph_update({ updates: [{
+  node_id: "<id>",
+  blocked: true,
+  blocked_reason: "Waiting on API key from client"
+}] })
+\`\`\`
+
+To unblock: \`graph_update({ updates: [{ node_id: "<id>", blocked: false }] })\`
+
+- \`blocked_reason\` is required when setting \`blocked: true\`
+- Blocked nodes won't appear in \`graph_next\` results
+- Unblocking auto-clears the reason
+- Use this for things like: waiting on external input, upstream API down, needs design review
+
 # Common mistakes to avoid
 
 - Setting dependencies on parent nodes instead of leaf nodes

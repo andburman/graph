@@ -1196,7 +1196,7 @@ describe("blocked status (#5)", () => {
     }, AGENT);
     const idA = plan.created.find((c) => c.ref === "a")!.id;
 
-    handleUpdate({ updates: [{ node_id: idA, blocked: true }] }, AGENT);
+    handleUpdate({ updates: [{ node_id: idA, blocked: true, blocked_reason: "Test block" }] }, AGENT);
 
     const actionable = handleQuery({ project: "blk-act", filter: { is_actionable: true } });
     expect(actionable.nodes).toHaveLength(1);
@@ -1227,7 +1227,7 @@ describe("blocked status (#5)", () => {
     }, AGENT);
     const idA = plan.created.find((c) => c.ref === "a")!.id;
 
-    handleUpdate({ updates: [{ node_id: idA, blocked: true }] }, AGENT);
+    handleUpdate({ updates: [{ node_id: idA, blocked: true, blocked_reason: "Test block" }] }, AGENT);
 
     const summary = handleOpen({ project: "blk-sum" }, AGENT) as any;
     expect(summary.summary.blocked).toBe(1);
@@ -1373,5 +1373,78 @@ describe("progress summaries (#7)", () => {
     const result = handleTree({ project: "prog-tree-leaf" });
     const leaf = result.tree.children![0];
     expect(leaf.progress).toBeUndefined();
+  });
+});
+
+describe("blocked polish", () => {
+  it("requires blocked_reason when setting blocked: true", () => {
+    const { root } = openProject("blk-reason", "Test", AGENT) as any;
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    const id = plan.created[0].id;
+
+    expect(() => {
+      handleUpdate({ updates: [{ node_id: id, blocked: true }] }, AGENT);
+    }).toThrow(/blocked_reason/);
+  });
+
+  it("allows blocked: true when blocked_reason is provided", () => {
+    const { root } = openProject("blk-reason-ok", "Test", AGENT) as any;
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    const id = plan.created[0].id;
+
+    handleUpdate({ updates: [{ node_id: id, blocked: true, blocked_reason: "Waiting on API" }] }, AGENT);
+    const ctx = handleContext({ node_id: id });
+    expect(ctx.node.blocked).toBe(true);
+    expect(ctx.node.blocked_reason).toBe("Waiting on API");
+  });
+
+  it("onboard tree includes blocked and blocked_reason", () => {
+    const { root } = openProject("blk-onboard", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Blocked task" },
+        { ref: "b", parent_ref: root.id, summary: "Free task" },
+      ],
+    }, AGENT);
+    const idA = plan.created.find((c) => c.ref === "a")!.id;
+
+    handleUpdate({ updates: [{ node_id: idA, blocked: true, blocked_reason: "Needs review" }] }, AGENT);
+
+    const onboard = handleOnboard({ project: "blk-onboard" }) as any;
+    const blockedNode = onboard.tree.find((n: any) => n.summary === "Blocked task");
+    const freeNode = onboard.tree.find((n: any) => n.summary === "Free task");
+
+    expect(blockedNode.blocked).toBe(true);
+    expect(blockedNode.blocked_reason).toBe("Needs review");
+    expect(freeNode.blocked).toBe(false);
+    expect(freeNode.blocked_reason).toBeNull();
+  });
+
+  it("blocked + dependency interaction: manually blocked takes precedence", () => {
+    const { root } = openProject("blk-dep", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "dep", parent_ref: root.id, summary: "Dependency" },
+        { ref: "task", parent_ref: root.id, summary: "Task", depends_on: ["dep"] },
+      ],
+    }, AGENT);
+    const taskId = plan.created.find((c) => c.ref === "task")!.id;
+    const depId = plan.created.find((c) => c.ref === "dep")!.id;
+
+    // Manually block the task (it's also dep-blocked)
+    handleUpdate({ updates: [{ node_id: taskId, blocked: true, blocked_reason: "External blocker" }] }, AGENT);
+
+    // Resolve the dependency
+    handleUpdate({ updates: [{ node_id: depId, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }] }, AGENT);
+
+    // Task is still manually blocked — should not appear in graph_next
+    const next = handleNext({ project: "blk-dep" }, AGENT);
+    expect(next.nodes).toHaveLength(0);
+
+    // Unblock manually
+    handleUpdate({ updates: [{ node_id: taskId, blocked: false }] }, AGENT);
+    const next2 = handleNext({ project: "blk-dep" }, AGENT);
+    expect(next2.nodes).toHaveLength(1);
+    expect(next2.nodes[0].node.id).toBe(taskId);
   });
 });

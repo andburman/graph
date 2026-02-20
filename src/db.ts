@@ -126,6 +126,9 @@ function migrate(db: Database.Database): void {
     db.exec("ALTER TABLE nodes ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0");
     db.exec("ALTER TABLE nodes ADD COLUMN blocked_reason TEXT DEFAULT NULL");
   }
+
+  // Index on blocked status (must come after blocked column migration)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_nodes_blocked ON nodes(project, blocked, resolved)");
 }
 
 export function checkpointDb(): void {

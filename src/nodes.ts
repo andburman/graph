@@ -243,6 +243,17 @@ export function updateNode(input: UpdateNodeInput): Node {
     newDiscovery = input.discovery;
   }
 
+  // Require blocked_reason when blocking a node
+  if (input.blocked === true && !node.blocked) {
+    const reason = input.blocked_reason ?? node.blocked_reason;
+    if (!reason) {
+      throw new EngineError(
+        "blocked_reason_required",
+        `Cannot block node ${input.node_id} without a blocked_reason. Provide blocked_reason explaining why this node is blocked.`
+      );
+    }
+  }
+
   if (input.blocked !== undefined && input.blocked !== node.blocked) {
     changes.push({ field: "blocked", before: node.blocked, after: input.blocked });
     newBlocked = input.blocked;

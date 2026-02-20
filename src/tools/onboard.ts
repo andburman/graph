@@ -27,10 +27,14 @@ export interface OnboardResult {
     id: string;
     summary: string;
     resolved: boolean;
+    blocked: boolean;
+    blocked_reason: string | null;
     children: Array<{
       id: string;
       summary: string;
       resolved: boolean;
+      blocked: boolean;
+      blocked_reason: string | null;
       child_count: number;
     }>;
   }>;
@@ -104,7 +108,7 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
   const tree = topChildren.map((child) => {
     const grandchildren = db
       .prepare(
-        `SELECT id, summary, resolved,
+        `SELECT id, summary, resolved, blocked, blocked_reason,
          (SELECT COUNT(*) FROM nodes gc WHERE gc.parent = n.id) as child_count
          FROM nodes n WHERE parent = ? ORDER BY created_at ASC`
       )
@@ -112,6 +116,8 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
       id: string;
       summary: string;
       resolved: number;
+      blocked: number;
+      blocked_reason: string | null;
       child_count: number;
     }>;
 
@@ -120,10 +126,14 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
       summary: child.summary,
       resolved: child.resolved === 1,
       discovery: child.discovery,
+      blocked: child.blocked === 1,
+      blocked_reason: child.blocked_reason,
       children: grandchildren.map((gc) => ({
         id: gc.id,
         summary: gc.summary,
         resolved: gc.resolved === 1,
+        blocked: gc.blocked === 1,
+        blocked_reason: gc.blocked_reason,
         child_count: gc.child_count,
       })),
     };
@@ -174,7 +184,7 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
   const actionableRows = db
     .prepare(
       `SELECT n.id, n.summary, n.properties FROM nodes n
-       WHERE n.project = ? AND n.resolved = 0
+       WHERE n.project = ? AND n.resolved = 0 AND n.blocked = 0
        AND NOT EXISTS (
          SELECT 1 FROM nodes child WHERE child.parent = n.id AND child.resolved = 0
        )
