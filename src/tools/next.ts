@@ -26,8 +26,15 @@ export interface NextResultNode {
   }>;
 }
 
+export interface ClaimedTask {
+  id: string;
+  summary: string;
+  claimed_at: string;
+}
+
 export interface NextResult {
   nodes: NextResultNode[];
+  your_claims?: ClaimedTask[];
 }
 
 export function handleNext(
@@ -167,5 +174,26 @@ export function handleNext(
     };
   });
 
-  return { nodes: results };
+  // Surface caller's existing claims (unexpired) so they can resume or release them
+  const claimRows = db
+    .prepare(
+      `SELECT id, summary, json_extract(properties, '$._claimed_at') as claimed_at
+       FROM nodes
+       WHERE project = ? AND resolved = 0
+       AND json_extract(properties, '$._claimed_by') = ?
+       AND json_extract(properties, '$._claimed_at') > ?
+       ORDER BY json_extract(properties, '$._claimed_at') DESC`
+    )
+    .all(project, agent, claimCutoff) as Array<{ id: string; summary: string; claimed_at: string }>;
+
+  const result: NextResult = { nodes: results };
+  if (claimRows.length > 0) {
+    result.your_claims = claimRows.map((r) => ({
+      id: r.id,
+      summary: r.summary,
+      claimed_at: r.claimed_at,
+    }));
+  }
+
+  return result;
 }

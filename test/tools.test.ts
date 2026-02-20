@@ -1234,3 +1234,75 @@ describe("blocked status (#5)", () => {
     expect(summary.summary.actionable).toBe(1);
   });
 });
+
+describe("your_claims in graph_next (#6)", () => {
+  it("surfaces existing claims in response", () => {
+    const { root } = openProject("claims", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+      ],
+    }, AGENT);
+
+    // Claim task A
+    const first = handleNext({ project: "claims", claim: true }, AGENT);
+    expect(first.nodes[0].node.summary).toBe("Task A");
+
+    // Next call should show the existing claim
+    const second = handleNext({ project: "claims" }, AGENT);
+    expect(second.your_claims).toBeDefined();
+    expect(second.your_claims).toHaveLength(1);
+    expect(second.your_claims![0].summary).toBe("Task A");
+    expect(second.your_claims![0].claimed_at).toBeDefined();
+  });
+
+  it("does not show claims from other agents", () => {
+    const { root } = openProject("claims-other", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+      ],
+    }, AGENT);
+
+    // Agent 1 claims task A
+    handleNext({ project: "claims-other", claim: true }, "agent-1");
+
+    // Agent 2 should not see agent-1's claims
+    const result = handleNext({ project: "claims-other" }, "agent-2");
+    expect(result.your_claims).toBeUndefined();
+  });
+
+  it("excludes expired claims", () => {
+    const { root } = openProject("claims-exp", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }],
+    }, AGENT);
+    const id = plan.created[0].id;
+
+    // Manually set a claim with an old timestamp (well past TTL)
+    updateNode({
+      node_id: id,
+      agent: AGENT,
+      properties: {
+        _claimed_by: AGENT,
+        _claimed_at: "2020-01-01T00:00:00.000Z",
+      },
+    });
+
+    // Expired claim should not appear
+    const result = handleNext({ project: "claims-exp" }, AGENT);
+    expect(result.your_claims).toBeUndefined();
+  });
+
+  it("omits your_claims when none exist", () => {
+    const { root } = openProject("claims-none", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }],
+    }, AGENT);
+
+    const result = handleNext({ project: "claims-none" }, AGENT);
+    expect(result.your_claims).toBeUndefined();
+  });
+});
