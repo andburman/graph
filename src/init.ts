@@ -78,7 +78,7 @@ This project uses Graph for task tracking across sessions. Start every session w
 
   if (existsSync(claudeMdPath)) {
     const current = readFileSync(claudeMdPath, "utf8");
-    if (current.includes("graph_onboard")) {
+    if (current.includes("Graph workflow") || current.includes("graph_onboard")) {
       console.log("✓ CLAUDE.md — graph workflow instructions already present");
     } else {
       appendFileSync(claudeMdPath, graphSection, "utf8");
