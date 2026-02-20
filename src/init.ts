@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
+import { handleAgentConfig } from "./tools/agent-config.js";
 
-// [sl:MIVSXp2PYOhrcE28xIFni] npx graph init — auto-write .mcp.json entry
+// [sl:hy8oXisWnrZN1BfkonUqd] npx @graph-tl/graph init — zero friction onboarding
 
 const MCP_CONFIG = {
   command: "npx",
@@ -12,31 +13,50 @@ const MCP_CONFIG = {
 };
 
 export function init(): void {
-  const configPath = join(process.cwd(), ".mcp.json");
+  const cwd = process.cwd();
+  let wrote = false;
 
-  let config: Record<string, any> = {};
-
+  // 1. Write .mcp.json
+  const configPath = join(cwd, ".mcp.json");
   if (existsSync(configPath)) {
     try {
-      config = JSON.parse(readFileSync(configPath, "utf8"));
+      const config = JSON.parse(readFileSync(configPath, "utf8"));
+      if (config.mcpServers?.graph) {
+        console.log("✓ .mcp.json — graph already configured");
+      } else {
+        config.mcpServers = config.mcpServers ?? {};
+        config.mcpServers.graph = MCP_CONFIG;
+        writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
+        console.log("✓ .mcp.json — added graph server");
+        wrote = true;
+      }
     } catch {
-      console.error(`Error: ${configPath} exists but is not valid JSON.`);
-      process.exit(1);
+      console.error(`✗ .mcp.json exists but is not valid JSON — skipping`);
     }
-
-    if (config.mcpServers?.graph) {
-      console.log("Graph is already configured in .mcp.json");
-      return;
-    }
+  } else {
+    const config = { mcpServers: { graph: MCP_CONFIG } };
+    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
+    console.log("✓ .mcp.json — created with graph server");
+    wrote = true;
   }
 
-  if (!config.mcpServers) {
-    config.mcpServers = {};
+  // 2. Write .claude/agents/graph.md
+  const agentPath = join(cwd, ".claude", "agents", "graph.md");
+  if (existsSync(agentPath)) {
+    console.log("✓ .claude/agents/graph.md — already exists");
+  } else {
+    const { agent_file } = handleAgentConfig();
+    mkdirSync(dirname(agentPath), { recursive: true });
+    writeFileSync(agentPath, agent_file, "utf8");
+    console.log("✓ .claude/agents/graph.md — created graph workflow agent");
+    wrote = true;
   }
 
-  config.mcpServers.graph = MCP_CONFIG;
-
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
-  console.log(`Added graph to ${configPath}`);
-  console.log("\nRestart Claude Code to load the new MCP server.");
+  // 3. Summary
+  console.log("");
+  if (wrote) {
+    console.log("Graph is ready. Restart Claude Code to load the MCP server.");
+  } else {
+    console.log("Graph is already set up — nothing to do.");
+  }
 }
