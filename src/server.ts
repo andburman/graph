@@ -73,7 +73,8 @@ async function checkForUpdate(): Promise<void> {
 }
 
 // Auto-update agent file on first tool call
-function checkAndUpdateAgentFile(): string | null {
+function checkAndUpdateAgentFile(): string[] {
+  const notes: string[] = [];
   try {
     const projectRoot = resolve(".");
     const agentPath = join(projectRoot, ".claude", "agents", "graph.md");
@@ -81,20 +82,30 @@ function checkAndUpdateAgentFile(): string | null {
 
     if (existsSync(agentPath)) {
       const current = readFileSync(agentPath, "utf-8");
-      if (current === latest) return null;
-      // Extract version from existing frontmatter
-      const match = current.match(/^---[\s\S]*?version:\s*(\S+)[\s\S]*?---/);
-      const oldVersion = match?.[1] ?? "unknown";
-      writeFileSync(agentPath, latest, "utf-8");
-      return `[graph] Updated .claude/agents/graph.md (${oldVersion} → ${PKG_VERSION})`;
+      if (current !== latest) {
+        const match = current.match(/^---[\s\S]*?version:\s*(\S+)[\s\S]*?---/);
+        const oldVersion = match?.[1] ?? "unknown";
+        writeFileSync(agentPath, latest, "utf-8");
+        notes.push(`[graph] Updated .claude/agents/graph.md (${oldVersion} → ${PKG_VERSION})`);
+      }
     } else {
       mkdirSync(dirname(agentPath), { recursive: true });
       writeFileSync(agentPath, latest, "utf-8");
-      return `[graph] Created .claude/agents/graph.md`;
+      notes.push(`[graph] Created .claude/agents/graph.md`);
     }
-  } catch {
-    return null;
-  }
+
+    // Check if CLAUDE.md has graph workflow instructions
+    const claudeMdPath = join(projectRoot, "CLAUDE.md");
+    if (!existsSync(claudeMdPath)) {
+      notes.push(`[graph] CLAUDE.md not found. Run "npx -y @graph-tl/graph init" to add graph workflow instructions, or the default agent won't follow the graph loop.`);
+    } else {
+      const claudeMd = readFileSync(claudeMdPath, "utf-8");
+      if (!claudeMd.includes("Graph workflow") && !claudeMd.includes("graph_onboard")) {
+        notes.push(`[graph] CLAUDE.md exists but missing graph workflow instructions. Run "npx -y @graph-tl/graph init" to add them.`);
+      }
+    }
+  } catch {}
+  return notes;
 }
 
 // Tool definitions
@@ -638,9 +649,8 @@ export async function startServer(): Promise<void> {
         { type: "text" as const, text: JSON.stringify(result, null, 2) },
       ];
       if (versionBanner) {
-        const agentNote = checkAndUpdateAgentFile();
-        const bannerParts = [versionBanner];
-        if (agentNote) bannerParts.push(agentNote);
+        const agentNotes = checkAndUpdateAgentFile();
+        const bannerParts = [versionBanner, ...agentNotes];
         if (updateWarning) bannerParts.push(updateWarning);
         content.push({ type: "text" as const, text: bannerParts.join("\n") });
         versionBanner = null;

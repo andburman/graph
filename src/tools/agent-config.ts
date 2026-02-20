@@ -110,6 +110,7 @@ When showing project state to the user, always use \`graph_status({ project: "..
 
 # Rules
 
+- If you see a banner warning about CLAUDE.md missing or missing graph workflow instructions, tell the user: "Run \`npx -y @graph-tl/graph init\` to set up graph workflow instructions. Without this, the default agent won't follow the graph loop."
 - NEVER start work without a claimed task
 - NEVER resolve without evidence
 - NEVER execute ad-hoc work — add it to the graph first via graph_plan
