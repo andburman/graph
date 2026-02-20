@@ -4,7 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { setDbPath, closeDb } from "./db.js";
+import { setDbPath, closeDb, checkpointDb } from "./db.js";
 import { ValidationError, EngineError } from "./validate.js";
 import { handleOpen } from "./tools/open.js";
 import { handlePlan } from "./tools/plan.js";
@@ -550,12 +550,19 @@ export async function startServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
+  // Periodic WAL checkpoint every 30s — flushes WAL data into main db file
+  const checkpointInterval = setInterval(() => {
+    try { checkpointDb(); } catch {}
+  }, 30_000);
+
   // Cleanup on exit
   process.on("SIGINT", () => {
+    clearInterval(checkpointInterval);
     closeDb();
     process.exit(0);
   });
   process.on("SIGTERM", () => {
+    clearInterval(checkpointInterval);
     closeDb();
     process.exit(0);
   });

@@ -13,6 +13,7 @@ export function getDb(): Database.Database {
     const resolvedPath = dbPath ?? path.resolve("graph.db");
     db = new Database(resolvedPath);
     db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = FULL");
     db.pragma("foreign_keys = ON");
     migrate(db);
   }
@@ -108,8 +109,15 @@ function migrate(db: Database.Database): void {
   }
 }
 
+export function checkpointDb(): void {
+  if (db) {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  }
+}
+
 export function closeDb(): void {
   if (db) {
+    checkpointDb();
     db.close();
   }
 }
