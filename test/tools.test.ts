@@ -11,6 +11,7 @@ import { handleRestructure } from "../src/tools/restructure.js";
 import { handleHistory } from "../src/tools/history.js";
 import { handleOnboard } from "../src/tools/onboard.js";
 import { handleAgentConfig } from "../src/tools/agent-config.js";
+import { handleTree } from "../src/tools/tree.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "../src/tools/knowledge.js";
 import { updateNode } from "../src/nodes.js";
 import { ValidationError, EngineError } from "../src/validate.js";
@@ -822,5 +823,98 @@ describe("graph_knowledge", () => {
     handleOpen({ project: "kb-test", goal: "Test knowledge" }, AGENT);
     expect(() => handleKnowledgeDelete({ project: "kb-test", key: "nope" }))
       .toThrow("not found");
+  });
+});
+
+describe("graph_tree", () => {
+  it("returns full tree for a project", () => {
+    const { root } = openProject("tree-test", "Build app", AGENT) as any;
+    handlePlan({
+      nodes: [
+        { ref: "design", parent_ref: root.id, summary: "Design" },
+        { ref: "api-spec", parent_ref: "design", summary: "API spec" },
+        { ref: "impl", parent_ref: root.id, summary: "Implementation" },
+        { ref: "auth", parent_ref: "impl", summary: "Auth module" },
+        { ref: "routes", parent_ref: "impl", summary: "Routes" },
+      ],
+    }, AGENT);
+
+    const result = handleTree({ project: "tree-test" });
+    expect(result.project).toBe("tree-test");
+    expect(result.tree.summary).toBe("Build app");
+    expect(result.tree.children).toHaveLength(2);
+    // Design has 1 child (API spec)
+    const design = result.tree.children!.find((c) => c.summary === "Design");
+    expect(design!.children).toHaveLength(1);
+    expect(design!.children![0].summary).toBe("API spec");
+    // Implementation has 2 children
+    const impl = result.tree.children!.find((c) => c.summary === "Implementation");
+    expect(impl!.children).toHaveLength(2);
+  });
+
+  it("counts resolved vs unresolved", () => {
+    const { root } = openProject("tree-test", "Build app", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+      ],
+    }, AGENT);
+
+    const taskA = plan.created.find((c) => c.ref === "a")!.id;
+    handleUpdate({ updates: [{ node_id: taskA, resolved: true, add_evidence: [{ type: "note", ref: "done" }] }] }, AGENT);
+
+    const result = handleTree({ project: "tree-test" });
+    expect(result.stats.total).toBe(3); // root + 2 tasks
+    expect(result.stats.resolved).toBe(1);
+    expect(result.stats.unresolved).toBe(2);
+  });
+
+  it("respects depth limit", () => {
+    const { root } = openProject("tree-test", "Build app", AGENT) as any;
+    handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Level 1" },
+        { ref: "b", parent_ref: "a", summary: "Level 2" },
+        { ref: "c", parent_ref: "b", summary: "Level 3" },
+      ],
+    }, AGENT);
+
+    // Depth 2: root (0) -> Level 1 (1) -> Level 2 shows child_count
+    const result = handleTree({ project: "tree-test", depth: 2 });
+    const lvl1 = result.tree.children![0];
+    expect(lvl1.summary).toBe("Level 1");
+    expect(lvl1.children![0].summary).toBe("Level 2");
+    expect(lvl1.children![0].child_count).toBe(1);
+    expect(lvl1.children![0].children).toBeUndefined();
+  });
+
+  it("throws for non-existent project", () => {
+    expect(() => handleTree({ project: "nope" })).toThrow(EngineError);
+  });
+});
+
+describe("graph_onboard without project", () => {
+  it("auto-selects when only one project exists", () => {
+    openProject("solo", "Only project", AGENT);
+
+    const result = handleOnboard({}) as any;
+    expect(result.project).toBe("solo");
+    expect(result.goal).toBe("Only project");
+  });
+
+  it("returns project list when multiple projects exist", () => {
+    openProject("proj-a", "Project A", AGENT);
+    openProject("proj-b", "Project B", AGENT);
+
+    const result = handleOnboard({}) as any;
+    expect(result.projects).toHaveLength(2);
+    expect(result.hint).toContain("2 projects found");
+  });
+
+  it("returns empty guidance when no projects exist", () => {
+    const result = handleOnboard({}) as any;
+    expect(result.projects).toEqual([]);
+    expect(result.hint).toContain("No projects yet");
   });
 });

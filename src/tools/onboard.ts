@@ -1,13 +1,13 @@
 import { getDb } from "../db.js";
-import { getProjectRoot, getProjectSummary } from "../nodes.js";
-import { requireString, optionalNumber } from "../validate.js";
+import { getProjectRoot, getProjectSummary, listProjects } from "../nodes.js";
+import { optionalString, optionalNumber } from "../validate.js";
 import { EngineError } from "../validate.js";
 import type { NodeRow, Evidence } from "../types.js";
 
 // [sl:yosc4NuV6j43Zv0fsDXDj] graph_onboard — single-call orientation for new agents
 
 export interface OnboardInput {
-  project: string;
+  project?: string;
   evidence_limit?: number;
 }
 
@@ -62,10 +62,30 @@ export interface OnboardResult {
   }>;
 }
 
-export function handleOnboard(input: OnboardInput): OnboardResult {
-  const project = requireString(input?.project, "project");
+// [sl:1pRRsWFomcv04XAkdLMAj] Allow graph_onboard without project name
+export function handleOnboard(input: OnboardInput): OnboardResult | { projects: ReturnType<typeof listProjects>; hint: string } {
   const evidenceLimit = optionalNumber(input?.evidence_limit, "evidence_limit", 1, 50) ?? 20;
   const db = getDb();
+
+  // Auto-resolve project when not specified
+  let project = optionalString(input?.project, "project");
+  if (!project) {
+    const projects = listProjects();
+    if (projects.length === 0) {
+      return {
+        projects: [],
+        hint: "No projects yet. Create one with graph_open({ project: \"my-project\", goal: \"...\" }).",
+      };
+    }
+    if (projects.length === 1) {
+      project = projects[0].project;
+    } else {
+      return {
+        projects,
+        hint: `${projects.length} projects found. Call graph_onboard with a specific project name.`,
+      };
+    }
+  }
 
   // Verify project exists
   const root = getProjectRoot(project);

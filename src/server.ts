@@ -17,6 +17,7 @@ import { handleRestructure } from "./tools/restructure.js";
 import { handleHistory } from "./tools/history.js";
 import { handleOnboard } from "./tools/onboard.js";
 import { handleAgentConfig } from "./tools/agent-config.js";
+import { handleTree } from "./tools/tree.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "./tools/knowledge.js";
 import { getLicenseTier, type Tier } from "./license.js";
 import { checkNodeLimit, checkProjectLimit, capEvidenceLimit, checkScope, checkKnowledgeTier } from "./gates.js";
@@ -350,10 +351,25 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        project: { type: "string", description: "Project name (e.g. 'my-project')" },
+        project: { type: "string", description: "Project name (e.g. 'my-project'). Omit to auto-select (works when there's exactly one project)." },
         evidence_limit: {
           type: "number",
           description: "Max evidence entries to return (default 20, max 50)",
+        },
+      },
+    },
+  },
+  {
+    name: "graph_tree",
+    description:
+      "Full tree visualization for a project. Returns the complete task hierarchy with resolve status. Use when you need to see the whole project structure beyond graph_context's single-node neighborhood.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project: { type: "string", description: "Project name (e.g. 'my-project')" },
+        depth: {
+          type: "number",
+          description: "Max tree depth to return (default 10, max 20)",
         },
       },
       required: ["project"],
@@ -523,6 +539,10 @@ export async function startServer(): Promise<void> {
           result = handleOnboard(onboardArgs);
           break;
         }
+
+        case "graph_tree":
+          result = handleTree(args as any);
+          break;
 
         case "graph_agent_config":
           result = handleAgentConfig();

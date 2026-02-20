@@ -116,10 +116,11 @@ That node ID links to a task in the graph. Call `graph_context` or `graph_histor
 
 | Tool | Purpose |
 |---|---|
-| **graph_onboard** | Single-call orientation: project summary, tree, evidence, knowledge, actionable tasks |
+| **graph_onboard** | Single-call orientation: project summary, tree, evidence, knowledge, actionable tasks. Omit project to auto-select |
 | **graph_open** | Open or create a project. No args = list all projects |
 | **graph_plan** | Batch create tasks with dependencies. Atomic |
 | **graph_next** | Get next actionable task, ranked by priority/depth/recency. Optional claim |
+| **graph_tree** | Full project tree visualization with resolve status |
 | **graph_context** | Deep-read a task: ancestors, children, dependency graph |
 | **graph_update** | Resolve tasks, add evidence. Reports newly unblocked tasks. Auto-resolves parents when all children complete |
 | **graph_connect** | Add/remove dependency edges with cycle detection |
