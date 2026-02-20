@@ -74,7 +74,8 @@ export function handleStatus(input: StatusInput): StatusResult | { projects: Ret
       const lines: string[] = ["# All Projects", ""];
       for (const p of projects) {
         const taskCount = p.total > 0 ? p.total - 1 : 0; // exclude root
-        const bar = taskCount > 0 ? progressBar(p.resolved, taskCount) : "empty";
+        const resolvedTasks = Math.min(p.resolved, taskCount);
+        const bar = taskCount > 0 ? progressBar(resolvedTasks, taskCount) : "empty";
         lines.push(`**${p.project}** ${bar}`);
         lines.push(`  ${p.summary}`);
         lines.push("");
