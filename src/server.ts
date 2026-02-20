@@ -97,7 +97,7 @@ function checkAndUpdateAgentFile(): string[] {
     // Check if CLAUDE.md has graph workflow instructions
     const claudeMdPath = join(projectRoot, "CLAUDE.md");
     if (!existsSync(claudeMdPath)) {
-      notes.push(`[graph] CLAUDE.md not found. Run "npx -y @graph-tl/graph init" to add graph workflow instructions, or the default agent won't follow the graph loop.`);
+      notes.push(`[graph] CLAUDE.md not found. Run /init to create it, then "npx -y @graph-tl/graph init" to add graph workflow instructions. Without this, the default agent won't follow the graph loop.`);
     } else {
       const claudeMd = readFileSync(claudeMdPath, "utf-8");
       if (!claudeMd.includes("Graph workflow") && !claudeMd.includes("graph_onboard")) {
