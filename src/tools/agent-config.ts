@@ -80,12 +80,12 @@ graph_update({ updates: [{
 Evidence is mandatory. At minimum, include one note explaining what you did.
 
 ## 7. PAUSE
-After resolving a task, STOP. Tell the user:
-- What you just completed
-- What the next actionable task is
-- Wait for the user to say "continue" before claiming the next task
+After resolving a task, STOP. Show the user the project status using \`graph_status\`, then wait for them to say "continue" before claiming the next task.
 
 The user controls the pace. Do not auto-claim the next task.
+
+## Presenting status
+When showing project state to the user, always use \`graph_status({ project: "..." })\` and output the \`formatted\` field directly. This gives a consistent, readable view. Never format graph data manually — use the tool.
 
 # Rules
 

@@ -21,6 +21,7 @@ import { handleHistory } from "./tools/history.js";
 import { handleOnboard } from "./tools/onboard.js";
 import { handleAgentConfig } from "./tools/agent-config.js";
 import { handleTree } from "./tools/tree.js";
+import { handleStatus } from "./tools/status.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "./tools/knowledge.js";
 import { getLicenseTier, type Tier } from "./license.js";
 import { checkNodeLimit, checkProjectLimit, capEvidenceLimit, checkScope, checkKnowledgeTier } from "./gates.js";
@@ -412,6 +413,20 @@ const TOOLS = [
     },
   },
   {
+    name: "graph_status",
+    description:
+      "Returns a pre-formatted markdown summary of a project's current state. Use this to present project status to the user — output the `formatted` field directly. Shows task tree with status tags, actionable items, blocked items, and knowledge entries. Omit project to auto-select or get multi-project overview.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project: {
+          type: "string",
+          description: "Project name. Omit to auto-select (works when there's exactly one project).",
+        },
+      },
+    },
+  },
+  {
     name: "graph_agent_config",
     description:
       "Returns the graph-optimized agent configuration file for Claude Code. Save the returned content to .claude/agents/graph.md to enable the graph workflow agent.",
@@ -580,6 +595,10 @@ export async function startServer(): Promise<void> {
 
         case "graph_tree":
           result = handleTree(args as any);
+          break;
+
+        case "graph_status":
+          result = handleStatus(args as any);
           break;
 
         case "graph_agent_config":

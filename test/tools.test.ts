@@ -12,6 +12,7 @@ import { handleHistory } from "../src/tools/history.js";
 import { handleOnboard } from "../src/tools/onboard.js";
 import { handleAgentConfig } from "../src/tools/agent-config.js";
 import { handleTree } from "../src/tools/tree.js";
+import { handleStatus } from "../src/tools/status.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "../src/tools/knowledge.js";
 import { updateNode } from "../src/nodes.js";
 import { ValidationError, EngineError } from "../src/validate.js";
@@ -1446,6 +1447,118 @@ describe("blocked polish", () => {
     const next2 = handleNext({ project: "blk-dep" }, AGENT);
     expect(next2.nodes).toHaveLength(1);
     expect(next2.nodes[0].node.id).toBe(taskId);
+  });
+});
+
+describe("graph_status", () => {
+  it("returns formatted markdown with progress bar and tree", () => {
+    const { root } = openProject("stat", "Build a widget", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Design the widget" },
+        { ref: "b", parent_ref: root.id, summary: "Implement the widget", depends_on: ["a"] },
+      ],
+    }, AGENT);
+    const idA = plan.created.find((c) => c.ref === "a")!.id;
+
+    handleUpdate({ updates: [{ node_id: idA, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }] }, AGENT);
+
+    const result = handleStatus({ project: "stat" }) as any;
+    expect(result.formatted).toContain("# stat");
+    expect(result.formatted).toContain("[x] Design the widget");
+    expect(result.formatted).toContain("[ ] Implement the widget");
+    expect(result.formatted).toContain("1/2 (50%)");
+    expect(result.formatted).toContain("## Recent Activity");
+  });
+
+  it("shows blocked items with reasons", () => {
+    const { root } = openProject("stat-blk", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Blocked task" }],
+    }, AGENT);
+    const id = plan.created[0].id;
+
+    handleUpdate({ updates: [{ node_id: id, blocked: true, blocked_reason: "Needs API key" }] }, AGENT);
+
+    const result = handleStatus({ project: "stat-blk" }) as any;
+    expect(result.formatted).toContain("[!] Blocked task");
+    expect(result.formatted).toContain("Needs API key");
+    expect(result.formatted).toContain("## Blocked");
+  });
+
+  it("shows dependency-blocked as waiting", () => {
+    const { root } = openProject("stat-dep", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "First" },
+        { ref: "b", parent_ref: root.id, summary: "Second", depends_on: ["a"] },
+      ],
+    }, AGENT);
+
+    const result = handleStatus({ project: "stat-dep" }) as any;
+    expect(result.formatted).toContain("[ ] First");
+    expect(result.formatted).toContain("[~] Second");
+  });
+
+  it("shows inline progress on parent nodes", () => {
+    const { root } = openProject("stat-tree", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "phase", parent_ref: root.id, summary: "Phase 1" },
+        { ref: "t1", parent_ref: "phase", summary: "Task 1" },
+        { ref: "t2", parent_ref: "phase", summary: "Task 2" },
+      ],
+    }, AGENT);
+    const t1Id = plan.created.find((c) => c.ref === "t1")!.id;
+
+    handleUpdate({ updates: [{ node_id: t1Id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }] }, AGENT);
+
+    const result = handleStatus({ project: "stat-tree" }) as any;
+    // Parent should show inline progress
+    expect(result.formatted).toContain("[ ] Phase 1 (1/2");
+    // Children should be indented
+    expect(result.formatted).toContain("  [x] Task 1");
+    expect(result.formatted).toContain("  [ ] Task 2");
+  });
+
+  it("shows recent activity", () => {
+    const { root } = openProject("stat-act", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Do something" }],
+    }, AGENT);
+    const id = plan.created[0].id;
+    handleUpdate({ updates: [{ node_id: id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }] }, AGENT);
+
+    const result = handleStatus({ project: "stat-act" }) as any;
+    expect(result.formatted).toContain("## Recent Activity");
+    expect(result.formatted).toContain("Do something");
+    expect(result.formatted).toContain(AGENT);
+  });
+
+  it("includes knowledge entries", () => {
+    const { root } = openProject("stat-know", "Test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    handleKnowledgeWrite({ project: "stat-know", key: "architecture", content: "Some notes" }, AGENT);
+
+    const result = handleStatus({ project: "stat-know" }) as any;
+    expect(result.formatted).toContain("## Knowledge");
+    expect(result.formatted).toContain("architecture");
+  });
+
+  it("auto-selects single project", () => {
+    openProject("stat-auto", "Test", AGENT);
+    const result = handleStatus({}) as any;
+    expect(result.project).toBe("stat-auto");
+    expect(result.formatted).toContain("# stat-auto");
+  });
+
+  it("returns multi-project overview when multiple exist", () => {
+    openProject("stat-m1", "First project", AGENT);
+    openProject("stat-m2", "Second project", AGENT);
+    const result = handleStatus({}) as any;
+    expect(result.projects).toHaveLength(2);
+    expect(result.hint).toContain("stat-m1");
+    expect(result.hint).toContain("stat-m2");
   });
 });
 
