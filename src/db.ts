@@ -116,6 +116,16 @@ function migrate(db: Database.Database): void {
   if (hasDiscovery.cnt === 0) {
     db.exec("ALTER TABLE nodes ADD COLUMN discovery TEXT DEFAULT NULL");
   }
+
+  // Migration: add blocked/blocked_reason columns if they don't exist
+  const hasBlocked = db.prepare(
+    "SELECT COUNT(*) as cnt FROM pragma_table_info('nodes') WHERE name = 'blocked'"
+  ).get() as { cnt: number };
+
+  if (hasBlocked.cnt === 0) {
+    db.exec("ALTER TABLE nodes ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0");
+    db.exec("ALTER TABLE nodes ADD COLUMN blocked_reason TEXT DEFAULT NULL");
+  }
 }
 
 export function checkpointDb(): void {

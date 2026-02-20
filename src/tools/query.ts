@@ -101,6 +101,7 @@ export function handleQuery(input: QueryInput): QueryResult {
 
   if (filter?.is_actionable) {
     conditions.push("n.resolved = 0");
+    conditions.push("n.blocked = 0");
     conditions.push(
       "NOT EXISTS (SELECT 1 FROM nodes child WHERE child.parent = n.id AND child.resolved = 0)"
     );
@@ -116,11 +117,11 @@ export function handleQuery(input: QueryInput): QueryResult {
   if (filter?.is_blocked) {
     conditions.push("n.resolved = 0");
     conditions.push(
-      `EXISTS (
+      `(n.blocked = 1 OR EXISTS (
         SELECT 1 FROM edges e
         JOIN nodes dep ON dep.id = e.to_node AND dep.resolved = 0
         WHERE e.from_node = n.id AND e.type = 'depends_on'
-      )`
+      ))`
     );
   }
 

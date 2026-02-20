@@ -8,6 +8,8 @@ export interface UpdateEntry {
   resolved?: boolean;
   resolved_reason?: string; // [sl:QBEtldx8PBWACftEM8MYl] Shorthand — auto-creates note evidence
   discovery?: string | null;
+  blocked?: boolean;
+  blocked_reason?: string | null;
   state?: unknown;
   summary?: string;
   properties?: Record<string, unknown>;
@@ -66,6 +68,8 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
       agent,
       resolved: entry.resolved,
       discovery: entry.discovery,
+      blocked: entry.blocked,
+      blocked_reason: entry.blocked_reason,
       state: entry.state,
       summary: entry.summary,
       properties: entry.properties,

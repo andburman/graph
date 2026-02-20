@@ -7,6 +7,8 @@ export interface Node {
   resolved: boolean;
   depth: number;
   discovery: string | null;
+  blocked: boolean;
+  blocked_reason: string | null;
   state: unknown;
   properties: Record<string, unknown>;
   context_links: string[];
@@ -55,6 +57,8 @@ export interface NodeRow {
   resolved: number;
   depth: number;
   discovery: string | null;
+  blocked: number;
+  blocked_reason: string | null;
   state: string | null;
   properties: string;
   context_links: string;

@@ -1127,3 +1127,110 @@ describe("cross-project restructure guard", () => {
     }, AGENT)).toThrow("Cannot merge nodes across projects");
   });
 });
+
+describe("blocked status (#5)", () => {
+  it("sets and unsets blocked via graph_update", () => {
+    const { root } = openProject("blk", "Test", AGENT) as any;
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    const id = plan.created[0].id;
+
+    // Block
+    handleUpdate({ updates: [{ node_id: id, blocked: true, blocked_reason: "Waiting on domain" }] }, AGENT);
+    let ctx = handleContext({ node_id: id });
+    expect(ctx.node.blocked).toBe(true);
+    expect(ctx.node.blocked_reason).toBe("Waiting on domain");
+
+    // Unblock — reason should auto-clear
+    handleUpdate({ updates: [{ node_id: id, blocked: false }] }, AGENT);
+    ctx = handleContext({ node_id: id });
+    expect(ctx.node.blocked).toBe(false);
+    expect(ctx.node.blocked_reason).toBeNull();
+  });
+
+  it("graph_next skips manually blocked nodes", () => {
+    const { root } = openProject("blk-next", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Blocked task", properties: { priority: 10 } },
+        { ref: "b", parent_ref: root.id, summary: "Available task", properties: { priority: 5 } },
+      ],
+    }, AGENT);
+    const idA = plan.created.find((c) => c.ref === "a")!.id;
+
+    // Block the high-priority task
+    handleUpdate({ updates: [{ node_id: idA, blocked: true, blocked_reason: "External dep" }] }, AGENT);
+
+    // graph_next should return the unblocked task
+    const next = handleNext({ project: "blk-next" }, AGENT);
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0].node.summary).toBe("Available task");
+  });
+
+  it("graph_query is_blocked includes manually blocked nodes", () => {
+    const { root } = openProject("blk-query", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "manual", parent_ref: root.id, summary: "Manually blocked" },
+        { ref: "dep-blocker", parent_ref: root.id, summary: "Blocker" },
+        { ref: "dep-blocked", parent_ref: root.id, summary: "Dep blocked", depends_on: ["dep-blocker"] },
+        { ref: "free", parent_ref: root.id, summary: "Free task" },
+      ],
+    }, AGENT);
+    const manualId = plan.created.find((c) => c.ref === "manual")!.id;
+
+    handleUpdate({ updates: [{ node_id: manualId, blocked: true, blocked_reason: "Waiting" }] }, AGENT);
+
+    const blocked = handleQuery({ project: "blk-query", filter: { is_blocked: true } });
+    expect(blocked.nodes.length).toBe(2); // manual + dep-blocked
+    const summaries = blocked.nodes.map((n) => n.summary).sort();
+    expect(summaries).toEqual(["Dep blocked", "Manually blocked"]);
+  });
+
+  it("graph_query is_actionable excludes manually blocked nodes", () => {
+    const { root } = openProject("blk-act", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Blocked" },
+        { ref: "b", parent_ref: root.id, summary: "Free" },
+      ],
+    }, AGENT);
+    const idA = plan.created.find((c) => c.ref === "a")!.id;
+
+    handleUpdate({ updates: [{ node_id: idA, blocked: true }] }, AGENT);
+
+    const actionable = handleQuery({ project: "blk-act", filter: { is_actionable: true } });
+    expect(actionable.nodes).toHaveLength(1);
+    expect(actionable.nodes[0].summary).toBe("Free");
+  });
+
+  it("blocked change appears in audit history", () => {
+    const { root } = openProject("blk-hist", "Test", AGENT) as any;
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    const id = plan.created[0].id;
+
+    handleUpdate({ updates: [{ node_id: id, blocked: true, blocked_reason: "Reason" }] }, AGENT);
+
+    const history = handleHistory({ node_id: id });
+    const blockedEvent = history.events.find((e: any) =>
+      e.changes && JSON.stringify(e.changes).includes("blocked")
+    );
+    expect(blockedEvent).toBeDefined();
+  });
+
+  it("blocked nodes count in project summary", () => {
+    const { root } = openProject("blk-sum", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Blocked" },
+        { ref: "b", parent_ref: root.id, summary: "Free" },
+      ],
+    }, AGENT);
+    const idA = plan.created.find((c) => c.ref === "a")!.id;
+
+    handleUpdate({ updates: [{ node_id: idA, blocked: true }] }, AGENT);
+
+    const summary = handleOpen({ project: "blk-sum" }, AGENT) as any;
+    expect(summary.summary.blocked).toBe(1);
+    expect(summary.summary.actionable).toBe(1);
+  });
+});

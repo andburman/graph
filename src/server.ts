@@ -228,6 +228,8 @@ const TOOLS = [
               resolved: { type: "boolean" },
               resolved_reason: { type: "string", description: "Shorthand: auto-creates a note evidence entry. Use instead of add_evidence for simple cases." },
               discovery: { type: "string", description: "Discovery phase status: 'pending' or 'done'. Set to 'done' after completing discovery interview." },
+              blocked: { type: "boolean", description: "Manually block/unblock a node. Blocked nodes are skipped by graph_next. Use for external blockers (e.g., waiting on domain purchase, another team)." },
+              blocked_reason: { type: "string", description: "Why the node is blocked. Cleared automatically when unblocking." },
               state: { description: "Agent-defined state, any type" },
               summary: { type: "string" },
               properties: {

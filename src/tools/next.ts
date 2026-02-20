@@ -63,10 +63,10 @@ export function handleNext(
     scopeParams.push(...descendantIds.map((d) => d.id));
   }
 
-  // Find actionable nodes: unresolved, leaf (no unresolved children), all deps resolved
+  // Find actionable nodes: unresolved, not blocked, leaf (no unresolved children), all deps resolved
   let query = `
     SELECT n.* FROM nodes n
-    WHERE n.project = ? AND n.resolved = 0
+    WHERE n.project = ? AND n.resolved = 0 AND n.blocked = 0
     ${scopeFilter}
     AND NOT EXISTS (
       SELECT 1 FROM nodes child WHERE child.parent = n.id AND child.resolved = 0

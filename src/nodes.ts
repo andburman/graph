@@ -16,6 +16,8 @@ function rowToNode(row: NodeRow): Node {
     resolved: row.resolved === 1,
     depth: row.depth,
     discovery: row.discovery ?? null,
+    blocked: row.blocked === 1,
+    blocked_reason: row.blocked_reason ?? null,
     state: row.state ? JSON.parse(row.state) : null,
     properties: JSON.parse(row.properties),
     context_links: JSON.parse(row.context_links),
@@ -60,6 +62,8 @@ export function createNode(input: CreateNodeInput): Node {
     resolved: false,
     depth,
     discovery: input.discovery ?? null,
+    blocked: false,
+    blocked_reason: null,
     state: input.state ?? null,
     properties: input.properties ?? {},
     context_links: input.context_links ?? [],
@@ -70,8 +74,8 @@ export function createNode(input: CreateNodeInput): Node {
   };
 
   db.prepare(`
-    INSERT INTO nodes (id, rev, parent, project, summary, resolved, depth, discovery, state, properties, context_links, evidence, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO nodes (id, rev, parent, project, summary, resolved, depth, discovery, blocked, blocked_reason, state, properties, context_links, evidence, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     node.id,
     node.rev,
@@ -81,6 +85,8 @@ export function createNode(input: CreateNodeInput): Node {
     0,
     node.depth,
     node.discovery,
+    0,
+    null,
     node.state !== null ? JSON.stringify(node.state) : null,
     JSON.stringify(node.properties),
     JSON.stringify(node.context_links),
@@ -189,6 +195,8 @@ export interface UpdateNodeInput {
   agent: string;
   resolved?: boolean;
   discovery?: string | null;
+  blocked?: boolean;
+  blocked_reason?: string | null;
   state?: unknown;
   summary?: string;
   properties?: Record<string, unknown>;
@@ -205,6 +213,8 @@ export function updateNode(input: UpdateNodeInput): Node {
 
   let newResolved = node.resolved;
   let newDiscovery = node.discovery;
+  let newBlocked = node.blocked;
+  let newBlockedReason = node.blocked_reason;
   let newState = node.state;
   let newSummary = node.summary;
   let newProperties = { ...node.properties };
@@ -231,6 +241,23 @@ export function updateNode(input: UpdateNodeInput): Node {
   if (input.discovery !== undefined && input.discovery !== node.discovery) {
     changes.push({ field: "discovery", before: node.discovery, after: input.discovery });
     newDiscovery = input.discovery;
+  }
+
+  if (input.blocked !== undefined && input.blocked !== node.blocked) {
+    changes.push({ field: "blocked", before: node.blocked, after: input.blocked });
+    newBlocked = input.blocked;
+    // Clear blocked_reason when unblocking (unless explicitly set)
+    if (!input.blocked && input.blocked_reason === undefined) {
+      if (node.blocked_reason !== null) {
+        changes.push({ field: "blocked_reason", before: node.blocked_reason, after: null });
+      }
+      newBlockedReason = null;
+    }
+  }
+
+  if (input.blocked_reason !== undefined && input.blocked_reason !== node.blocked_reason) {
+    changes.push({ field: "blocked_reason", before: node.blocked_reason, after: input.blocked_reason });
+    newBlockedReason = input.blocked_reason;
   }
 
   if (input.state !== undefined) {
@@ -300,6 +327,8 @@ export function updateNode(input: UpdateNodeInput): Node {
       rev = ?,
       resolved = ?,
       discovery = ?,
+      blocked = ?,
+      blocked_reason = ?,
       state = ?,
       summary = ?,
       properties = ?,
@@ -311,6 +340,8 @@ export function updateNode(input: UpdateNodeInput): Node {
     newRev,
     newResolved ? 1 : 0,
     newDiscovery,
+    newBlocked ? 1 : 0,
+    newBlockedReason,
     newState !== null ? JSON.stringify(newState) : null,
     newSummary,
     JSON.stringify(newProperties),
@@ -346,22 +377,26 @@ export function getProjectSummary(project: string): {
     )
     .get(project) as { total: number; resolved: number };
 
-  // Blocked: unresolved nodes that have at least one unresolved dependency
+  // Blocked: unresolved nodes that are manually blocked OR have unresolved dependencies
   const blocked = db
     .prepare(
-      `SELECT COUNT(DISTINCT n.id) as count
-       FROM nodes n
-       JOIN edges e ON e.from_node = n.id AND e.type = 'depends_on'
-       JOIN nodes dep ON dep.id = e.to_node AND dep.resolved = 0
-       WHERE n.project = ? AND n.resolved = 0`
+      `SELECT COUNT(DISTINCT id) as count FROM (
+         SELECT n.id FROM nodes n
+         WHERE n.project = ? AND n.resolved = 0 AND n.blocked = 1
+         UNION
+         SELECT n.id FROM nodes n
+         JOIN edges e ON e.from_node = n.id AND e.type = 'depends_on'
+         JOIN nodes dep ON dep.id = e.to_node AND dep.resolved = 0
+         WHERE n.project = ? AND n.resolved = 0
+       )`
     )
-    .get(project) as { count: number };
+    .get(project, project) as { count: number };
 
-  // Actionable: unresolved leaves (no unresolved children) with all deps resolved
+  // Actionable: unresolved leaves (no unresolved children) with all deps resolved and not manually blocked
   const actionable = db
     .prepare(
       `SELECT COUNT(*) as count FROM nodes n
-       WHERE n.project = ? AND n.resolved = 0
+       WHERE n.project = ? AND n.resolved = 0 AND n.blocked = 0
        AND NOT EXISTS (
          SELECT 1 FROM nodes child WHERE child.parent = n.id AND child.resolved = 0
        )
