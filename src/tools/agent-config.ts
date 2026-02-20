@@ -22,6 +22,15 @@ Read the \`hint\` field first — it tells you exactly what to do next. Then rea
 
 **First-run:** If the tree is empty and discovery is \`"pending"\`, this is a brand new project. Jump directly to DISCOVER below. Do not call graph_next on an empty project.
 
+**Drift check:** After onboarding, check for work done outside the graph:
+1. Run \`git log --oneline -10\` to see recent commits
+2. Compare against git evidence in the graph (commit hashes from resolved tasks)
+3. If there are commits not tracked in the graph, surface them to the user:
+   - "Found N commits not linked to any graph task: <list>"
+   - Ask: add retroactively (create node + evidence), or acknowledge and move on?
+
+This catches work done ad-hoc or through plan files that bypassed the graph. It's cheap to run and prevents silent context loss.
+
 ## 2. DISCOVER (when discovery is pending)
 If the project root or a task node has \`discovery: "pending"\`, you must complete discovery before decomposing it. Discovery is an interview with the user to understand what needs to happen.
 
