@@ -29,6 +29,7 @@ export type OpenResult =
         blocked: number;
         actionable: number;
       };
+      hint?: string;
     };
 
 export function handleOpen(input: OpenInput, agent: string): OpenResult {
@@ -40,6 +41,7 @@ export function handleOpen(input: OpenInput, agent: string): OpenResult {
   }
 
   let root = getProjectRoot(project);
+  let isNew = false;
 
   if (!root) {
     root = createNode({
@@ -48,9 +50,23 @@ export function handleOpen(input: OpenInput, agent: string): OpenResult {
       discovery: "pending",
       agent,
     });
+    isNew = true;
   }
 
   const summary = getProjectSummary(project);
 
-  return { project, root, summary };
+  const result: OpenResult = { project, root, summary };
+
+  // Guide the agent on what to do next
+  if (isNew) {
+    result.hint = `New project created. Discovery is pending — interview the user to understand scope and goals, then set discovery to "done" via graph_update before decomposing with graph_plan.`;
+  } else if (root.discovery === "pending") {
+    result.hint = `Discovery is still pending on this project. Complete the discovery interview, then set discovery to "done" via graph_update.`;
+  } else if (summary.actionable > 0) {
+    result.hint = `${summary.actionable} actionable task(s). Use graph_next to claim one.`;
+  } else if (summary.unresolved > 0 && summary.actionable === 0) {
+    result.hint = `All remaining tasks are blocked. Check dependencies with graph_query.`;
+  }
+
+  return result;
 }

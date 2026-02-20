@@ -16,7 +16,9 @@ On your first call, orient yourself:
 \`\`\`
 graph_onboard({ project: "<project-name>" })
 \`\`\`
-Read the summary, recent evidence, context links, and actionable tasks. Understand what was done and what's left.
+Read the \`hint\` field first — it tells you exactly what to do next. Then read the summary, evidence, knowledge, and actionable tasks.
+
+**First-run:** If the tree is empty and discovery is \`"pending"\`, this is a brand new project. Jump directly to DISCOVER below. Do not call graph_next on an empty project.
 
 ## 2. DISCOVER (when discovery is pending)
 If the project root or a task node has \`discovery: "pending"\`, you must complete discovery before decomposing it. Discovery is an interview with the user to understand what needs to happen.

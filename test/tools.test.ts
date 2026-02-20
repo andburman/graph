@@ -44,6 +44,18 @@ describe("graph_open", () => {
     const result = handleOpen({ project: "test" }, AGENT) as any;
     expect(result.root.summary).toBe("Goal");
   });
+
+  it("returns hint for new project", () => {
+    const result = handleOpen({ project: "new", goal: "Build something" }, AGENT) as any;
+    expect(result.hint).toContain("Discovery is pending");
+  });
+
+  it("returns hint for project with actionable tasks", () => {
+    const { root } = openProject("active", "Active", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }] }, AGENT);
+    const result = handleOpen({ project: "active" }, AGENT) as any;
+    expect(result.hint).toContain("actionable");
+  });
 });
 
 describe("graph_plan", () => {
@@ -587,6 +599,27 @@ describe("graph_onboard", () => {
 
     const result = handleOnboard({ project: "test" });
     expect(result.knowledge).toEqual([]);
+  });
+
+  it("surfaces root discovery status and hint for new project", () => {
+    // Don't use openProject helper — we want discovery:pending
+    handleOpen({ project: "fresh", goal: "A brand new project" }, AGENT);
+
+    const result = handleOnboard({ project: "fresh" });
+    expect(result.goal).toBe("A brand new project");
+    expect(result.discovery).toBe("pending");
+    expect(result.hint).toContain("Discovery is pending");
+  });
+
+  it("shows actionable hint when tasks are ready", () => {
+    openProject("ready", "Ready project", AGENT);
+    const { root } = handleOpen({ project: "ready" }, AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+
+    const result = handleOnboard({ project: "ready" });
+    expect(result.discovery).toBe("done");
+    expect(result.hint).toContain("actionable");
+    expect(result.hint).toContain("graph_next");
   });
 
   it("respects evidence_limit", () => {

@@ -13,6 +13,9 @@ export interface OnboardInput {
 
 export interface OnboardResult {
   project: string;
+  goal: string;
+  discovery: string | null;
+  hint?: string;
   summary: {
     total: number;
     resolved: number;
@@ -167,8 +170,23 @@ export function handleOnboard(input: OnboardInput): OnboardResult {
     properties: JSON.parse(row.properties),
   }));
 
+  // Build hint based on project state
+  let hint: string | undefined;
+  if (root.discovery === "pending") {
+    hint = `Discovery is pending. Interview the user to understand scope and goals, write knowledge entries with findings, then set discovery to "done" via graph_update before decomposing with graph_plan.`;
+  } else if (actionable.length > 0) {
+    hint = `${actionable.length} actionable task(s) ready. Use graph_next({ project: "${project}", claim: true }) to claim one.`;
+  } else if (summary.unresolved > 0 && summary.actionable === 0) {
+    hint = `All remaining tasks are blocked. Check dependencies with graph_query.`;
+  } else if (summary.total <= 1 && root.discovery !== "pending") {
+    hint = `Project is empty — use graph_plan to decompose the goal into tasks.`;
+  }
+
   return {
     project,
+    goal: root.summary,
+    discovery: root.discovery,
+    hint,
     summary,
     tree,
     recent_evidence,
