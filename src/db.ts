@@ -107,6 +107,15 @@ function migrate(db: Database.Database): void {
       UPDATE nodes SET depth = (SELECT depth FROM tree WHERE tree.id = nodes.id)
     `);
   }
+
+  // [sl:AOXqUIhpW2-gdMqWATf66] Migration: add discovery column if it doesn't exist
+  const hasDiscovery = db.prepare(
+    "SELECT COUNT(*) as cnt FROM pragma_table_info('nodes') WHERE name = 'discovery'"
+  ).get() as { cnt: number };
+
+  if (hasDiscovery.cnt === 0) {
+    db.exec("ALTER TABLE nodes ADD COLUMN discovery TEXT DEFAULT NULL");
+  }
 }
 
 export function checkpointDb(): void {

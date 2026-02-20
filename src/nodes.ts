@@ -15,6 +15,7 @@ function rowToNode(row: NodeRow): Node {
     summary: row.summary,
     resolved: row.resolved === 1,
     depth: row.depth,
+    discovery: row.discovery ?? null,
     state: row.state ? JSON.parse(row.state) : null,
     properties: JSON.parse(row.properties),
     context_links: JSON.parse(row.context_links),
@@ -31,6 +32,7 @@ export interface CreateNodeInput {
   parent?: string;
   project: string;
   summary: string;
+  discovery?: string | null;
   state?: unknown;
   properties?: Record<string, unknown>;
   context_links?: string[];
@@ -57,6 +59,7 @@ export function createNode(input: CreateNodeInput): Node {
     summary: input.summary,
     resolved: false,
     depth,
+    discovery: input.discovery ?? null,
     state: input.state ?? null,
     properties: input.properties ?? {},
     context_links: input.context_links ?? [],
@@ -67,8 +70,8 @@ export function createNode(input: CreateNodeInput): Node {
   };
 
   db.prepare(`
-    INSERT INTO nodes (id, rev, parent, project, summary, resolved, depth, state, properties, context_links, evidence, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO nodes (id, rev, parent, project, summary, resolved, depth, discovery, state, properties, context_links, evidence, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     node.id,
     node.rev,
@@ -77,6 +80,7 @@ export function createNode(input: CreateNodeInput): Node {
     node.summary,
     0,
     node.depth,
+    node.discovery,
     node.state !== null ? JSON.stringify(node.state) : null,
     JSON.stringify(node.properties),
     JSON.stringify(node.context_links),
@@ -184,6 +188,7 @@ export interface UpdateNodeInput {
   node_id: string;
   agent: string;
   resolved?: boolean;
+  discovery?: string | null;
   state?: unknown;
   summary?: string;
   properties?: Record<string, unknown>;
@@ -199,6 +204,7 @@ export function updateNode(input: UpdateNodeInput): Node {
   const now = new Date().toISOString();
 
   let newResolved = node.resolved;
+  let newDiscovery = node.discovery;
   let newState = node.state;
   let newSummary = node.summary;
   let newProperties = { ...node.properties };
@@ -220,6 +226,11 @@ export function updateNode(input: UpdateNodeInput): Node {
   if (input.resolved !== undefined && input.resolved !== node.resolved) {
     changes.push({ field: "resolved", before: node.resolved, after: input.resolved });
     newResolved = input.resolved;
+  }
+
+  if (input.discovery !== undefined && input.discovery !== node.discovery) {
+    changes.push({ field: "discovery", before: node.discovery, after: input.discovery });
+    newDiscovery = input.discovery;
   }
 
   if (input.state !== undefined) {
@@ -288,6 +299,7 @@ export function updateNode(input: UpdateNodeInput): Node {
     UPDATE nodes SET
       rev = ?,
       resolved = ?,
+      discovery = ?,
       state = ?,
       summary = ?,
       properties = ?,
@@ -298,6 +310,7 @@ export function updateNode(input: UpdateNodeInput): Node {
   `).run(
     newRev,
     newResolved ? 1 : 0,
+    newDiscovery,
     newState !== null ? JSON.stringify(newState) : null,
     newSummary,
     JSON.stringify(newProperties),

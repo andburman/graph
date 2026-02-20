@@ -192,6 +192,7 @@ const TOOLS = [
             properties: {
               node_id: { type: "string" },
               resolved: { type: "boolean" },
+              discovery: { type: "string", description: "Discovery phase status: 'pending' or 'done'. Set to 'done' after completing discovery interview." },
               state: { description: "Agent-defined state, any type" },
               summary: { type: "string" },
               properties: {

@@ -6,6 +6,7 @@ export interface Node {
   summary: string;
   resolved: boolean;
   depth: number;
+  discovery: string | null;
   state: unknown;
   properties: Record<string, unknown>;
   context_links: string[];
@@ -53,6 +54,7 @@ export interface NodeRow {
   summary: string;
   resolved: number;
   depth: number;
+  discovery: string | null;
   state: string | null;
   properties: string;
   context_links: string;

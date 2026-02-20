@@ -5,6 +5,7 @@ import { requireArray, requireString } from "../validate.js";
 export interface UpdateEntry {
   node_id: string;
   resolved?: boolean;
+  discovery?: string | null;
   state?: unknown;
   summary?: string;
   properties?: Record<string, unknown>;
@@ -44,6 +45,7 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
       node_id: entry.node_id,
       agent,
       resolved: entry.resolved,
+      discovery: entry.discovery,
       state: entry.state,
       summary: entry.summary,
       properties: entry.properties,

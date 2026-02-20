@@ -45,6 +45,7 @@ export function handleOpen(input: OpenInput, agent: string): OpenResult {
     root = createNode({
       project,
       summary: goal ?? project,
+      discovery: "pending",
       agent,
     });
   }

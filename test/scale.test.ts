@@ -6,6 +6,7 @@ import { handleNext } from "../src/tools/next.js";
 import { handleQuery } from "../src/tools/query.js";
 import { handleUpdate } from "../src/tools/update.js";
 import { handleContext } from "../src/tools/context.js";
+import { updateNode } from "../src/nodes.js";
 
 const AGENT = "scale-test";
 
@@ -24,6 +25,7 @@ function time<T>(label: string, fn: () => T): { result: T; ms: number } {
 // - Cross-workstream dependencies every 20 tasks
 function buildProject(name: string, nodeCount: number) {
   const { root } = handleOpen({ project: name, goal: `Scale test (${nodeCount} nodes)` }, AGENT) as any;
+  updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
 
   const workstreamCount = 10;
   const tasksPerWorkstream = Math.floor((nodeCount - 1) / workstreamCount); // -1 for root

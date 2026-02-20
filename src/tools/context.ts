@@ -13,6 +13,7 @@ interface NodeTree {
   id: string;
   summary: string;
   resolved: boolean;
+  discovery: string | null;
   state: unknown;
   children?: NodeTree[];
   child_count?: number;
@@ -34,6 +35,7 @@ function buildNodeTree(nodeId: string, currentDepth: number, maxDepth: number): 
     id: node.id,
     summary: node.summary,
     resolved: node.resolved,
+    discovery: node.discovery,
     state: node.state,
   };
 

@@ -1,7 +1,7 @@
 import { getDb } from "../db.js";
 import { createNode, getNode } from "../nodes.js";
 import { addEdge } from "../edges.js";
-import { requireArray, requireString, ValidationError } from "../validate.js";
+import { requireArray, requireString, ValidationError, EngineError } from "../validate.js";
 
 export interface PlanNodeInput {
   ref: string;
@@ -70,6 +70,13 @@ export function handlePlan(input: PlanInput, agent: string): PlanResult {
       let project: string;
       if (parentId) {
         const parentNode = getNode(parentId)!;
+        // [sl:m3_UNy-eICtHeHExfHwUH] Block decomposition when node has pending discovery
+        if (parentNode.discovery === "pending") {
+          throw new EngineError(
+            "discovery_pending",
+            `Cannot add children to "${parentNode.summary}" — discovery is pending. Complete the discovery interview first (set discovery to 'done' via graph_update), then decompose.`
+          );
+        }
         project = parentNode.project;
       } else {
         // If no parent, the node must be a root. But we need a project.

@@ -84,6 +84,7 @@ export function handleOnboard(input: OnboardInput): OnboardResult {
       id: child.id,
       summary: child.summary,
       resolved: child.resolved === 1,
+      discovery: child.discovery,
       children: grandchildren.map((gc) => ({
         id: gc.id,
         summary: gc.summary,

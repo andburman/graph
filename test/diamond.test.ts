@@ -7,6 +7,7 @@ import { handleQuery } from "../src/tools/query.js";
 import { handleUpdate } from "../src/tools/update.js";
 import { handleContext } from "../src/tools/context.js";
 import { handleConnect } from "../src/tools/connect.js";
+import { updateNode } from "../src/nodes.js";
 
 const AGENT = "diamond-test";
 
@@ -28,6 +29,7 @@ describe("diamond dependency", () => {
 
   function setupDiamond() {
     const { root } = handleOpen({ project: "diamond", goal: "Diamond test" }, AGENT) as any;
+    updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
 
     const plan = handlePlan(
       {
@@ -192,6 +194,7 @@ describe("double diamond", () => {
 
   it("cascades correctly through stacked diamonds", () => {
     const { root } = handleOpen({ project: "double-diamond", goal: "Stacked diamonds" }, AGENT) as any;
+    updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
 
     const plan = handlePlan(
       {
@@ -239,6 +242,7 @@ describe("wide fan-in", () => {
 
   it("unblocks only when ALL dependencies resolve", () => {
     const { root } = handleOpen({ project: "fan-in", goal: "Wide fan-in" }, AGENT) as any;
+    updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
 
     const depCount = 20;
     const nodes: any[] = [];
@@ -295,6 +299,7 @@ describe("fan-out then fan-in", () => {
 
   it("handles parallel work correctly", () => {
     const { root } = handleOpen({ project: "fan-out-in", goal: "Fan-out then fan-in" }, AGENT) as any;
+    updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
 
     const plan = handlePlan(
       {

@@ -12,9 +12,16 @@ import { handleHistory } from "../src/tools/history.js";
 import { handleOnboard } from "../src/tools/onboard.js";
 import { handleAgentConfig } from "../src/tools/agent-config.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "../src/tools/knowledge.js";
+import { updateNode } from "../src/nodes.js";
 import { ValidationError, EngineError } from "../src/validate.js";
 
 const AGENT = "test-agent";
+
+function openProject(project: string, goal: string, agent: string) {
+  const result = handleOpen({ project, goal }, agent) as any;
+  updateNode({ node_id: result.root.id, agent, discovery: "done" });
+  return result;
+}
 
 beforeEach(() => {
   initDb(":memory:");
@@ -41,7 +48,7 @@ describe("graph_open", () => {
 
 describe("graph_plan", () => {
   it("creates nodes with dependencies", () => {
-    const { root } = handleOpen({ project: "test", goal: "Root" }, AGENT) as any;
+    const { root } = openProject("test", "Root", AGENT) as any;
 
     const result = handlePlan(
       {
@@ -75,7 +82,7 @@ describe("graph_plan", () => {
 
 describe("graph_next", () => {
   it("returns highest priority actionable node", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
 
     handlePlan(
       {
@@ -92,7 +99,7 @@ describe("graph_next", () => {
   });
 
   it("skips blocked nodes", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
 
     const plan = handlePlan(
       {
@@ -109,7 +116,7 @@ describe("graph_next", () => {
   });
 
   it("includes ancestors and context links", () => {
-    const { root } = handleOpen({ project: "test", goal: "Root goal" }, AGENT) as any;
+    const { root } = openProject("test", "Root goal", AGENT) as any;
 
     handlePlan(
       {
@@ -127,7 +134,7 @@ describe("graph_next", () => {
   });
 
   it("scopes results to a subtree", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
 
     const plan = handlePlan(
       {
@@ -154,7 +161,7 @@ describe("graph_next", () => {
   });
 
   it("returns empty when scope has no actionable descendants", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
 
     const plan = handlePlan(
       {
@@ -174,7 +181,7 @@ describe("graph_next", () => {
   });
 
   it("soft-claims when requested", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
 
     const result = handleNext({ project: "test", claim: true }, AGENT);
@@ -184,7 +191,7 @@ describe("graph_next", () => {
 
 describe("graph_context", () => {
   it("returns full neighborhood", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
 
     const plan = handlePlan(
       {
@@ -208,7 +215,7 @@ describe("graph_context", () => {
 
 describe("graph_update", () => {
   it("resolves nodes and reports newly actionable", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
 
     const plan = handlePlan(
       {
@@ -232,7 +239,7 @@ describe("graph_update", () => {
   });
 
   it("rejects resolve without evidence", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "A" }] }, AGENT);
     const query = handleQuery({ project: "test", filter: { is_actionable: true } });
     const nodeId = query.nodes[0].id;
@@ -243,7 +250,7 @@ describe("graph_update", () => {
   });
 
   it("allows resolve with evidence", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "A" }] }, AGENT);
     const query = handleQuery({ project: "test", filter: { is_actionable: true } });
     const nodeId = query.nodes[0].id;
@@ -256,7 +263,7 @@ describe("graph_update", () => {
   });
 
   it("allows resolve when node already has evidence", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "A" }] }, AGENT);
     const query = handleQuery({ project: "test", filter: { is_actionable: true } });
     const nodeId = query.nodes[0].id;
@@ -278,7 +285,7 @@ describe("graph_update", () => {
 
 describe("graph_connect", () => {
   it("adds and removes edges", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     const plan = handlePlan(
       {
         nodes: [
@@ -303,7 +310,7 @@ describe("graph_connect", () => {
   });
 
   it("rejects parent edges", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     const plan = handlePlan(
       { nodes: [{ ref: "a", parent_ref: root.id, summary: "A" }] },
       AGENT
@@ -320,7 +327,7 @@ describe("graph_connect", () => {
 
 describe("graph_query", () => {
   it("filters by text", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     handlePlan(
       {
         nodes: [
@@ -337,7 +344,7 @@ describe("graph_query", () => {
   });
 
   it("filters by actionable", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     handlePlan(
       {
         nodes: [
@@ -356,7 +363,7 @@ describe("graph_query", () => {
 
 describe("graph_restructure", () => {
   it("moves a node", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     const plan = handlePlan(
       {
         nodes: [
@@ -382,7 +389,7 @@ describe("graph_restructure", () => {
   });
 
   it("drops a subtree", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     const plan = handlePlan(
       {
         nodes: [
@@ -400,14 +407,14 @@ describe("graph_restructure", () => {
       AGENT
     );
 
-    const summary = handleOpen({ project: "test" }, AGENT) as any;
+    const summary = openProject("test", "test", AGENT) as any;
     expect(summary.summary.resolved).toBe(2); // A + A.1 resolved, root stays unresolved
   });
 });
 
 describe("graph_history", () => {
   it("returns audit trail", () => {
-    const { root } = handleOpen({ project: "test" }, AGENT) as any;
+    const { root } = openProject("test", "test", AGENT) as any;
     handleUpdate(
       { updates: [{ node_id: root.id, summary: "Updated" }] },
       AGENT
@@ -423,7 +430,7 @@ describe("graph_history", () => {
 
 describe("graph_onboard", () => {
   it("returns all five sections for a project", () => {
-    const { root } = handleOpen({ project: "test", goal: "Build app" }, AGENT) as any;
+    const { root } = openProject("test", "Build app", AGENT) as any;
 
     // Create a tree with some resolved work and evidence
     const plan = handlePlan(
@@ -489,7 +496,7 @@ describe("graph_onboard", () => {
   });
 
   it("respects evidence_limit", () => {
-    const { root } = handleOpen({ project: "test", goal: "Goal" }, AGENT) as any;
+    const { root } = openProject("test", "Goal", AGENT) as any;
     const plan = handlePlan(
       { nodes: [{ ref: "a", parent_ref: root.id, summary: "A" }] },
       AGENT
@@ -538,7 +545,7 @@ describe("graph_agent_config", () => {
 describe("full workflow", () => {
   it("plan -> claim -> work -> resolve -> unblock", () => {
     // Open project
-    const { root } = handleOpen({ project: "workflow", goal: "Build feature" }, AGENT) as any;
+    const { root } = openProject("workflow", "Build feature", AGENT) as any;
 
     // Plan work
     const plan = handlePlan(

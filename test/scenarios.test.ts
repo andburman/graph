@@ -9,7 +9,15 @@ import { handleContext } from "../src/tools/context.js";
 import { handleRestructure } from "../src/tools/restructure.js";
 import { handleHistory } from "../src/tools/history.js";
 import { handleConnect } from "../src/tools/connect.js";
+import { updateNode } from "../src/nodes.js";
 import { EngineError } from "../src/validate.js";
+
+/** Open a project and clear discovery so tests can plan immediately */
+function openProject(project: string, goal: string, agent: string) {
+  const result = handleOpen({ project, goal }, agent) as any;
+  updateNode({ node_id: result.root.id, agent, discovery: "done" });
+  return result;
+}
 
 beforeEach(() => {
   initDb(":memory:");
@@ -28,7 +36,7 @@ describe("deep decomposition", () => {
   //                   └── task (depth 5)
 
   it("tracks depth correctly across 5+ levels", () => {
-    const { root } = handleOpen({ project: "deep", goal: "Deep nesting test" }, "agent") as any;
+    const { root } = openProject("deep", "Deep nesting test", "agent") as any;
 
     const plan = handlePlan({
       nodes: [
@@ -54,7 +62,7 @@ describe("deep decomposition", () => {
   });
 
   it("only the deepest leaf is actionable", () => {
-    const { root } = handleOpen({ project: "deep", goal: "Deep nesting" }, "agent") as any;
+    const { root } = openProject("deep", "Deep nesting", "agent") as any;
 
     handlePlan({
       nodes: [
@@ -72,7 +80,7 @@ describe("deep decomposition", () => {
   });
 
   it("ancestor chain is complete in graph_next", () => {
-    const { root } = handleOpen({ project: "deep", goal: "Root" }, "agent") as any;
+    const { root } = openProject("deep", "Root", "agent") as any;
 
     handlePlan({
       nodes: [
@@ -91,7 +99,7 @@ describe("deep decomposition", () => {
   });
 
   it("resolving leaf makes parent actionable, cascades up", () => {
-    const { root } = handleOpen({ project: "deep" }, "agent") as any;
+    const { root } = openProject("deep", "deep", "agent") as any;
 
     const plan = handlePlan({
       nodes: [
@@ -127,7 +135,7 @@ describe("deep decomposition", () => {
 
 describe("mid-flight replanning", () => {
   it("adds new tasks to a partially completed project", () => {
-    const { root } = handleOpen({ project: "replan", goal: "Build MVP" }, "agent") as any;
+    const { root } = openProject("replan", "Build MVP", "agent") as any;
 
     // Initial plan: 3 tasks
     const plan = handlePlan({
@@ -174,7 +182,7 @@ describe("mid-flight replanning", () => {
   });
 
   it("reprioritizes tasks mid-project", () => {
-    const { root } = handleOpen({ project: "reprio", goal: "Reprioritize" }, "agent") as any;
+    const { root } = openProject("reprio", "Reprioritize", "agent") as any;
 
     const plan = handlePlan({
       nodes: [
@@ -201,7 +209,7 @@ describe("mid-flight replanning", () => {
   });
 
   it("drops planned work that's no longer needed", () => {
-    const { root } = handleOpen({ project: "drop", goal: "Drop test" }, "agent") as any;
+    const { root } = openProject("drop", "Drop test", "agent") as any;
 
     const plan = handlePlan({
       nodes: [
@@ -235,7 +243,7 @@ describe("mid-flight replanning", () => {
 
 describe("multi-agent coordination", () => {
   it("two agents claim different tasks", () => {
-    const { root } = handleOpen({ project: "multi", goal: "Multi-agent" }, "agent-1") as any;
+    const { root } = openProject("multi", "Multi-agent", "agent-1") as any;
 
     handlePlan({
       nodes: [
@@ -261,7 +269,7 @@ describe("multi-agent coordination", () => {
   });
 
   it("stale claims expire and can be reclaimed", () => {
-    const { root } = handleOpen({ project: "stale", goal: "Claim expiry" }, "agent-1") as any;
+    const { root } = openProject("stale", "Claim expiry", "agent-1") as any;
 
     handlePlan({
       nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }],
@@ -282,7 +290,7 @@ describe("multi-agent coordination", () => {
   });
 
   it("agent can see its own claimed tasks", () => {
-    const { root } = handleOpen({ project: "my-claims", goal: "Query claims" }, "agent-1") as any;
+    const { root } = openProject("my-claims", "Query claims", "agent-1") as any;
 
     handlePlan({
       nodes: [
@@ -312,7 +320,7 @@ describe("multi-agent coordination", () => {
 describe("cross-session pickup", () => {
   it("second agent reconstructs full project state", () => {
     // === SESSION 1: Agent 1 creates project, does partial work ===
-    const { root } = handleOpen({ project: "session-test", goal: "Build a feature" }, "agent-1") as any;
+    const { root } = openProject("session-test", "Build a feature", "agent-1") as any;
 
     const plan = handlePlan({
       nodes: [
@@ -397,7 +405,7 @@ describe("cross-session pickup", () => {
   });
 
   it("history shows work across agents", () => {
-    const { root } = handleOpen({ project: "history-test" }, "agent-1") as any;
+    const { root } = openProject("history-test", "History test", "agent-1") as any;
 
     const plan = handlePlan({
       nodes: [{ ref: "task", parent_ref: root.id, summary: "Shared task" }],
@@ -437,7 +445,7 @@ describe("cascade resolution", () => {
   // Single-child chain: resolving the leaf cascades actionability up
 
   it("single-child chain cascades up level by level", () => {
-    const { root } = handleOpen({ project: "cascade", goal: "Cascade" }, "agent") as any;
+    const { root } = openProject("cascade", "Cascade", "agent") as any;
 
     const plan = handlePlan({
       nodes: [
@@ -479,7 +487,7 @@ describe("cascade resolution", () => {
   });
 
   it("multi-child parent waits for all children", () => {
-    const { root } = handleOpen({ project: "multi-child", goal: "Multi-child" }, "agent") as any;
+    const { root } = openProject("multi-child", "Multi-child", "agent") as any;
 
     const plan = handlePlan({
       nodes: [

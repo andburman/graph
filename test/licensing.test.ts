@@ -10,6 +10,7 @@ import {
 } from "../src/gates.js";
 import { handleOpen } from "../src/tools/open.js";
 import { handlePlan } from "../src/tools/plan.js";
+import { updateNode } from "../src/nodes.js";
 import { EngineError } from "../src/validate.js";
 
 // [sl:l6jLTnjWusw6Di0DX7S-y] End-to-end licensing tests
@@ -149,6 +150,7 @@ describe("feature gates", () => {
 
     it("blocks nodes over 50 on free tier", () => {
       const { root } = handleOpen({ project: "test", goal: "Test" }, AGENT) as any;
+      updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
       // Create 49 more nodes (root is 1), reaching 50
       const nodes = Array.from({ length: 49 }, (_, i) => ({
         ref: `n${i}`,
