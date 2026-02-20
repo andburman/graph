@@ -3,6 +3,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { setDbPath, closeDb, checkpointDb } from "./db.js";
 import { ValidationError, EngineError } from "./validate.js";
@@ -182,7 +185,7 @@ const TOOLS = [
   {
     name: "graph_update",
     description:
-      "Update one or more nodes. Can change resolved, state, summary, properties (merged), context_links, and add evidence. When resolving nodes, returns newly_actionable — nodes that became unblocked. ENFORCED: Resolving a node requires evidence — the engine rejects resolved=true if the node has no existing evidence and no add_evidence in the call. Include at least one add_evidence entry (type: 'git' for commits, 'note' for what was done and why, 'test' for results). Also add context_links to files you modified.",
+      "Update one or more nodes. Can change resolved, state, summary, properties (merged), context_links, and add evidence. When resolving nodes, returns newly_actionable — nodes that became unblocked. ENFORCED: Resolving a node requires evidence — use resolved_reason (shorthand, auto-creates note) or add_evidence array (type: 'git' for commits, 'note' for what was done and why, 'test' for results). Also add context_links to files you modified.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -193,6 +196,7 @@ const TOOLS = [
             properties: {
               node_id: { type: "string" },
               resolved: { type: "boolean" },
+              resolved_reason: { type: "string", description: "Shorthand: auto-creates a note evidence entry. Use instead of add_evidence for simple cases." },
               discovery: { type: "string", description: "Discovery phase status: 'pending' or 'done'. Set to 'done' after completing discovery interview." },
               state: { description: "Agent-defined state, any type" },
               summary: { type: "string" },
@@ -448,7 +452,7 @@ export async function startServer(): Promise<void> {
 
   const server = new Server(
     { name: "graph", version: PKG_VERSION },
-    { capabilities: { tools: {} } }
+    { capabilities: { tools: {}, resources: {} } }
   );
 
   // Fire-and-forget version check
@@ -605,6 +609,92 @@ export async function startServer(): Promise<void> {
         isError: true,
       };
     }
+  });
+
+  // [sl:Ps3gCuzhMoQWK6tynsGA4] MCP resources — browsable read-only views of graph data
+
+  // Resource templates (dynamic, parameterized URIs)
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: [
+      {
+        uriTemplate: "graph://{project}/tree",
+        name: "Project Tree",
+        description: "Full task tree for a project with resolve status",
+        mimeType: "application/json",
+      },
+      {
+        uriTemplate: "graph://{project}/knowledge",
+        name: "Project Knowledge",
+        description: "All knowledge entries for a project",
+        mimeType: "application/json",
+      },
+      {
+        uriTemplate: "graph://{project}/knowledge/{key}",
+        name: "Knowledge Entry",
+        description: "A specific knowledge entry",
+        mimeType: "application/json",
+      },
+    ],
+  }));
+
+  // Static resource list (enumerate known projects)
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    try {
+      const { listProjects } = await import("./nodes.js");
+      const projects = listProjects();
+      const resources = projects.flatMap((p) => [
+        {
+          uri: `graph://${p.project}/tree`,
+          name: `${p.project} — Tree`,
+          description: `Task tree: ${p.total} nodes (${p.resolved} resolved)`,
+          mimeType: "application/json",
+        },
+        {
+          uri: `graph://${p.project}/knowledge`,
+          name: `${p.project} — Knowledge`,
+          description: `Knowledge entries for ${p.project}`,
+          mimeType: "application/json",
+        },
+      ]);
+      return { resources };
+    } catch {
+      return { resources: [] };
+    }
+  });
+
+  // Read a specific resource
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const uri = request.params.uri;
+    const match = uri.match(/^graph:\/\/([^/]+)\/(.+)$/);
+    if (!match) {
+      throw new Error(`Invalid resource URI: ${uri}`);
+    }
+
+    const [, project, path] = match;
+
+    if (path === "tree") {
+      const result = handleTree({ project });
+      return {
+        contents: [{ uri, mimeType: "application/json", text: JSON.stringify(result, null, 2) }],
+      };
+    }
+
+    if (path === "knowledge") {
+      const result = handleKnowledgeRead({ project });
+      return {
+        contents: [{ uri, mimeType: "application/json", text: JSON.stringify(result, null, 2) }],
+      };
+    }
+
+    const knowledgeMatch = path.match(/^knowledge\/(.+)$/);
+    if (knowledgeMatch) {
+      const result = handleKnowledgeRead({ project, key: knowledgeMatch[1] });
+      return {
+        contents: [{ uri, mimeType: "application/json", text: JSON.stringify(result, null, 2) }],
+      };
+    }
+
+    throw new Error(`Unknown resource path: ${path}`);
   });
 
   // Connect transport

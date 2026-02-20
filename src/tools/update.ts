@@ -5,6 +5,7 @@ import { requireArray, requireString } from "../validate.js";
 export interface UpdateEntry {
   node_id: string;
   resolved?: boolean;
+  resolved_reason?: string; // [sl:QBEtldx8PBWACftEM8MYl] Shorthand — auto-creates note evidence
   discovery?: string | null;
   state?: unknown;
   summary?: string;
@@ -42,6 +43,12 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
   let project: string | null = null;
 
   for (const entry of updates) {
+    // Expand resolved_reason shorthand into evidence
+    let evidence = entry.add_evidence;
+    if (entry.resolved_reason) {
+      evidence = [...(evidence ?? []), { type: "note", ref: entry.resolved_reason }];
+    }
+
     const node = updateNode({
       node_id: entry.node_id,
       agent,
@@ -52,7 +59,7 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
       properties: entry.properties,
       add_context_links: entry.add_context_links,
       remove_context_links: entry.remove_context_links,
-      add_evidence: entry.add_evidence,
+      add_evidence: evidence,
     });
 
     updated.push({ node_id: node.id, rev: node.rev });

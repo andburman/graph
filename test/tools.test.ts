@@ -918,3 +918,41 @@ describe("graph_onboard without project", () => {
     expect(result.hint).toContain("No projects yet");
   });
 });
+
+describe("resolved_reason shorthand", () => {
+  it("auto-creates note evidence from resolved_reason", () => {
+    const { root } = openProject("rr", "Test", AGENT) as any;
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    const id = plan.created[0].id;
+
+    handleUpdate({
+      updates: [{ node_id: id, resolved: true, resolved_reason: "Imported from Jira" }],
+    }, AGENT);
+
+    const ctx = handleContext({ node_id: id });
+    expect(ctx.node.resolved).toBe(true);
+    expect(ctx.node.evidence).toHaveLength(1);
+    expect(ctx.node.evidence[0].type).toBe("note");
+    expect(ctx.node.evidence[0].ref).toBe("Imported from Jira");
+  });
+
+  it("combines resolved_reason with explicit add_evidence", () => {
+    const { root } = openProject("rr2", "Test", AGENT) as any;
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    const id = plan.created[0].id;
+
+    handleUpdate({
+      updates: [{
+        node_id: id,
+        resolved: true,
+        resolved_reason: "Quick note",
+        add_evidence: [{ type: "git", ref: "abc123" }],
+      }],
+    }, AGENT);
+
+    const ctx = handleContext({ node_id: id });
+    expect(ctx.node.evidence).toHaveLength(2);
+    expect(ctx.node.evidence.some((e) => e.type === "git")).toBe(true);
+    expect(ctx.node.evidence.some((e) => e.ref === "Quick note")).toBe(true);
+  });
+});
