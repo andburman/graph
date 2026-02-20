@@ -1,7 +1,9 @@
 // [sl:fV9I7Vel3xT5d_Ws2YHul] Subagent delivery — free for all (retention hook)
 
-const AGENT_PROMPT = `---
+function agentPrompt(version: string): string {
+  return `---
 name: graph
+version: ${version}
 description: Use this agent for tasks tracked in Graph. Enforces the claim-work-resolve workflow — always checks graph_next before working, adds new work to the graph before executing, and resolves with evidence.
 tools: Read, Edit, Write, Bash, Glob, Grep, Task(Explore), AskUserQuestion
 model: sonnet
@@ -107,6 +109,7 @@ The user controls the pace. Do not auto-claim the next task.
 - Trying to decompose a node without completing discovery first
 - Not writing knowledge entries during discovery — future agents need this context
 `;
+}
 
 export interface AgentConfigResult {
   agent_file: string;
@@ -114,9 +117,9 @@ export interface AgentConfigResult {
   instructions: string;
 }
 
-export function handleAgentConfig(): AgentConfigResult {
+export function handleAgentConfig(version: string): AgentConfigResult {
   return {
-    agent_file: AGENT_PROMPT,
+    agent_file: agentPrompt(version),
     install_path: ".claude/agents/graph.md",
     instructions:
       "Save the agent_file content to .claude/agents/graph.md in your project root. " +

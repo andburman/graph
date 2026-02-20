@@ -757,10 +757,17 @@ describe("graph_onboard", () => {
 
 describe("graph_agent_config", () => {
   it("returns agent file content for all tiers (free retention hook)", () => {
-    const result = handleAgentConfig();
+    const result = handleAgentConfig("1.2.3");
     expect(result.agent_file).toContain("graph-optimized agent");
     expect(result.install_path).toBe(".claude/agents/graph.md");
     expect(result.instructions).toContain("Save the agent_file");
+  });
+
+  it("embeds version in YAML frontmatter", () => {
+    const result = handleAgentConfig("0.1.12");
+    const match = result.agent_file.match(/^---[\s\S]*?version:\s*(\S+)[\s\S]*?---/);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe("0.1.12");
   });
 });
 

@@ -26,7 +26,7 @@ import { getLicenseTier, type Tier } from "./license.js";
 import { checkNodeLimit, checkProjectLimit, capEvidenceLimit, checkScope, checkKnowledgeTier } from "./gates.js";
 
 import { createHash } from "crypto";
-import { mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join, resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -69,6 +69,31 @@ async function checkForUpdate(): Promise<void> {
       updateWarning = `[graph] Update available: ${PKG_VERSION} → ${data.version}. Run: npx clear-npx-cache && restart MCP server.`;
     }
   } catch {}
+}
+
+// Auto-update agent file on first tool call
+function checkAndUpdateAgentFile(): string | null {
+  try {
+    const projectRoot = resolve(".");
+    const agentPath = join(projectRoot, ".claude", "agents", "graph.md");
+    const latest = handleAgentConfig(PKG_VERSION).agent_file;
+
+    if (existsSync(agentPath)) {
+      const current = readFileSync(agentPath, "utf-8");
+      if (current === latest) return null;
+      // Extract version from existing frontmatter
+      const match = current.match(/^---[\s\S]*?version:\s*(\S+)[\s\S]*?---/);
+      const oldVersion = match?.[1] ?? "unknown";
+      writeFileSync(agentPath, latest, "utf-8");
+      return `[graph] Updated .claude/agents/graph.md (${oldVersion} → ${PKG_VERSION})`;
+    } else {
+      mkdirSync(dirname(agentPath), { recursive: true });
+      writeFileSync(agentPath, latest, "utf-8");
+      return `[graph] Created .claude/agents/graph.md`;
+    }
+  } catch {
+    return null;
+  }
 }
 
 // Tool definitions
@@ -556,7 +581,7 @@ export async function startServer(): Promise<void> {
           break;
 
         case "graph_agent_config":
-          result = handleAgentConfig();
+          result = handleAgentConfig(PKG_VERSION);
           break;
 
         case "graph_knowledge_write":
@@ -592,7 +617,11 @@ export async function startServer(): Promise<void> {
         { type: "text" as const, text: JSON.stringify(result, null, 2) },
       ];
       if (versionBanner) {
-        content.push({ type: "text" as const, text: updateWarning ? `${versionBanner} — ${updateWarning}` : versionBanner });
+        const agentNote = checkAndUpdateAgentFile();
+        const bannerParts = [versionBanner];
+        if (agentNote) bannerParts.push(agentNote);
+        if (updateWarning) bannerParts.push(updateWarning);
+        content.push({ type: "text" as const, text: bannerParts.join("\n") });
         versionBanner = null;
         updateWarning = null;
       }

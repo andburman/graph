@@ -1,8 +1,16 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { handleAgentConfig } from "./tools/agent-config.js";
 
 // [sl:hy8oXisWnrZN1BfkonUqd] npx @graph-tl/graph init — zero friction onboarding
+
+let PKG_VERSION = "0.0.0";
+try {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+  PKG_VERSION = pkg.version;
+} catch {}
 
 const MCP_CONFIG = {
   command: "npx",
@@ -42,10 +50,17 @@ export function init(): void {
 
   // 2. Write .claude/agents/graph.md
   const agentPath = join(cwd, ".claude", "agents", "graph.md");
+  const { agent_file } = handleAgentConfig(PKG_VERSION);
   if (existsSync(agentPath)) {
-    console.log("✓ .claude/agents/graph.md — already exists");
+    const current = readFileSync(agentPath, "utf8");
+    if (current === agent_file) {
+      console.log("✓ .claude/agents/graph.md — already up to date");
+    } else {
+      writeFileSync(agentPath, agent_file, "utf8");
+      console.log("✓ .claude/agents/graph.md — updated");
+      wrote = true;
+    }
   } else {
-    const { agent_file } = handleAgentConfig();
     mkdirSync(dirname(agentPath), { recursive: true });
     writeFileSync(agentPath, agent_file, "utf8");
     console.log("✓ .claude/agents/graph.md — created graph workflow agent");
