@@ -230,7 +230,22 @@ function handleDrop(op: DropOp, agent: string): { node_id: string; result: strin
 
 function handleDelete(op: DeleteOp, agent: string): { node_id: string; result: string } {
   const db = getDb();
-  getNodeOrThrow(op.node_id);
+  const node = getNodeOrThrow(op.node_id);
+
+  // Guard: prevent deleting project roots that have evidence (preserves traceability)
+  if (node.parent === null) {
+    const evidenceCount = db.prepare(
+      `SELECT COUNT(*) as cnt FROM nodes
+       WHERE project = ? AND evidence != '[]'`
+    ).get(node.project) as { cnt: number };
+
+    if (evidenceCount.cnt > 0) {
+      throw new EngineError(
+        "delete_protected",
+        `Cannot delete project "${node.project}" — it contains ${evidenceCount.cnt} node(s) with evidence. Resolved projects preserve traceability across sessions. Use "drop" to mark as resolved instead.`
+      );
+    }
+  }
 
   const descendants = getAllDescendants(op.node_id);
   const allIds = [op.node_id, ...descendants];

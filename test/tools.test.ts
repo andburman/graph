@@ -1448,3 +1448,28 @@ describe("blocked polish", () => {
     expect(next2.nodes[0].node.id).toBe(taskId);
   });
 });
+
+describe("delete protection", () => {
+  it("prevents deleting a project with evidence", () => {
+    const { root } = openProject("del-protect", "Test", AGENT) as any;
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+    const id = plan.created[0].id;
+
+    // Resolve with evidence
+    handleUpdate({ updates: [{ node_id: id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }] }, AGENT);
+
+    // Attempt to delete the project root
+    expect(() => {
+      handleRestructure({ operations: [{ op: "delete", node_id: root.id }] }, AGENT);
+    }).toThrow(/Cannot delete project/);
+  });
+
+  it("allows deleting a project with no evidence", () => {
+    const { root } = openProject("del-empty", "Test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task" }] }, AGENT);
+
+    // No evidence added — delete should succeed
+    const result = handleRestructure({ operations: [{ op: "delete", node_id: root.id }] }, AGENT);
+    expect(result.applied).toBe(1);
+  });
+});

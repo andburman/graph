@@ -97,6 +97,7 @@ The user controls the pace. Do not auto-claim the next task.
 - ALWAYS include context_links for files you modified when resolving
 - Parent nodes auto-resolve when all their children are resolved — you don't need to manually resolve them
 - NEVER skip discovery on nodes with discovery:pending — the system will block you from decomposing
+- NEVER delete resolved projects — they are the historical record. Completed projects are lightweight and preserve traceability across sessions
 - If you're approaching context limits, ensure your current task's state is captured (update with evidence even if not fully resolved) so the next agent can pick up where you left off
 
 # Record observations proactively
