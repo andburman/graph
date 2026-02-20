@@ -1,4 +1,4 @@
-import { getProjectRoot, getChildren } from "../nodes.js";
+import { getProjectRoot, getChildren, getSubtreeProgress } from "../nodes.js";
 import { requireString, optionalNumber } from "../validate.js";
 import { EngineError } from "../validate.js";
 import type { Node } from "../types.js";
@@ -15,6 +15,7 @@ interface TreeNode {
   summary: string;
   resolved: boolean;
   properties: Record<string, unknown>;
+  progress?: { resolved: number; total: number };
   children?: TreeNode[];
   child_count?: number;
 }
@@ -29,7 +30,12 @@ export interface TreeResult {
   };
 }
 
-function buildTree(node: Node, currentDepth: number, maxDepth: number, stats: { total: number; resolved: number }): TreeNode {
+function buildTree(
+  node: Node,
+  currentDepth: number,
+  maxDepth: number,
+  stats: { total: number; resolved: number }
+): { treeNode: TreeNode; subtotal: number; subresolved: number } {
   stats.total++;
   if (node.resolved) stats.resolved++;
 
@@ -41,17 +47,29 @@ function buildTree(node: Node, currentDepth: number, maxDepth: number, stats: { 
     properties: node.properties,
   };
 
-  if (children.length === 0) return treeNode;
+  let subtotal = 1;
+  let subresolved = node.resolved ? 1 : 0;
+
+  if (children.length === 0) return { treeNode, subtotal, subresolved };
 
   if (currentDepth < maxDepth) {
-    treeNode.children = children.map((child) =>
-      buildTree(child, currentDepth + 1, maxDepth, stats)
-    );
+    treeNode.children = [];
+    for (const child of children) {
+      const result = buildTree(child, currentDepth + 1, maxDepth, stats);
+      treeNode.children.push(result.treeNode);
+      subtotal += result.subtotal;
+      subresolved += result.subresolved;
+    }
   } else {
     treeNode.child_count = children.length;
+    // Count descendants via SQL when truncating at depth limit
+    const progress = getSubtreeProgress(node.id);
+    subtotal = progress.total;
+    subresolved = progress.resolved;
   }
 
-  return treeNode;
+  treeNode.progress = { resolved: subresolved, total: subtotal };
+  return { treeNode, subtotal, subresolved };
 }
 
 export function handleTree(input: TreeInput): TreeResult {
@@ -64,11 +82,11 @@ export function handleTree(input: TreeInput): TreeResult {
   }
 
   const stats = { total: 0, resolved: 0 };
-  const tree = buildTree(root, 0, depth, stats);
+  const { treeNode } = buildTree(root, 0, depth, stats);
 
   return {
     project,
-    tree,
+    tree: treeNode,
     stats: {
       total: stats.total,
       resolved: stats.resolved,

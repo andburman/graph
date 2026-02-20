@@ -1,4 +1,4 @@
-import { getNodeOrThrow, getChildren, getAncestors } from "../nodes.js";
+import { getNodeOrThrow, getChildren, getAncestors, getSubtreeProgress } from "../nodes.js";
 import { getEdgesFrom, getEdgesTo } from "../edges.js";
 import { getNode } from "../nodes.js";
 import { requireString, optionalNumber } from "../validate.js";
@@ -15,6 +15,7 @@ interface NodeTree {
   resolved: boolean;
   discovery: string | null;
   state: unknown;
+  progress?: { resolved: number; total: number };
   children?: NodeTree[];
   child_count?: number;
 }
@@ -42,6 +43,8 @@ function buildNodeTree(nodeId: string, currentDepth: number, maxDepth: number): 
   if (children.length === 0) {
     return tree;
   }
+
+  tree.progress = getSubtreeProgress(nodeId);
 
   if (currentDepth < maxDepth) {
     tree.children = children.map((child) =>

@@ -357,6 +357,24 @@ export function updateNode(input: UpdateNodeInput): Node {
   return getNodeOrThrow(input.node_id);
 }
 
+// --- Progress ---
+
+export function getSubtreeProgress(nodeId: string): { resolved: number; total: number } {
+  const db = getDb();
+  const row = db.prepare(
+    `WITH RECURSIVE descendants(id) AS (
+      SELECT id FROM nodes WHERE id = ?
+      UNION ALL
+      SELECT n.id FROM nodes n JOIN descendants d ON n.parent = d.id
+    )
+    SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN n.resolved = 1 THEN 1 ELSE 0 END) as resolved
+    FROM descendants d JOIN nodes n ON n.id = d.id`
+  ).get(nodeId) as { total: number; resolved: number };
+  return { resolved: row.resolved, total: row.total };
+}
+
 // --- Query helpers ---
 
 export function getProjectSummary(project: string): {

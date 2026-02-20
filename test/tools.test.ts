@@ -1306,3 +1306,72 @@ describe("your_claims in graph_next (#6)", () => {
     expect(result.your_claims).toBeUndefined();
   });
 });
+
+describe("progress summaries (#7)", () => {
+  it("graph_context shows progress on parent nodes", () => {
+    const { root } = openProject("prog-ctx", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "phase", parent_ref: root.id, summary: "Phase 1" },
+        { ref: "a", parent_ref: "phase", summary: "Task A" },
+        { ref: "b", parent_ref: "phase", summary: "Task B" },
+      ],
+    }, AGENT);
+
+    const phaseId = plan.created.find((c) => c.ref === "phase")!.id;
+    const taskAId = plan.created.find((c) => c.ref === "a")!.id;
+
+    // Before resolving anything: 0/3 (phase + 2 tasks)
+    let ctx = handleContext({ node_id: phaseId });
+    expect(ctx.children.progress).toEqual({ resolved: 0, total: 3 });
+
+    // Resolve one task
+    handleUpdate({ updates: [{ node_id: taskAId, resolved: true, resolved_reason: "done" }] }, AGENT);
+
+    ctx = handleContext({ node_id: phaseId });
+    expect(ctx.children.progress).toEqual({ resolved: 1, total: 3 });
+  });
+
+  it("graph_context omits progress on leaf nodes", () => {
+    const { root } = openProject("prog-leaf", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Leaf task" }],
+    }, AGENT);
+
+    const ctx = handleContext({ node_id: root.id });
+    const leaf = ctx.children.children![0];
+    expect(leaf.progress).toBeUndefined();
+  });
+
+  it("graph_tree shows progress on parent nodes", () => {
+    const { root } = openProject("prog-tree", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "phase", parent_ref: root.id, summary: "Phase 1" },
+        { ref: "a", parent_ref: "phase", summary: "Task A" },
+        { ref: "b", parent_ref: "phase", summary: "Task B" },
+      ],
+    }, AGENT);
+
+    const taskAId = plan.created.find((c) => c.ref === "a")!.id;
+    handleUpdate({ updates: [{ node_id: taskAId, resolved: true, resolved_reason: "done" }] }, AGENT);
+
+    const result = handleTree({ project: "prog-tree" });
+    // Root has progress over all 4 nodes (root + phase + 2 tasks)
+    expect(result.tree.progress).toEqual({ resolved: 1, total: 4 });
+    // Phase has progress over its subtree (phase + 2 tasks)
+    const phase = result.tree.children!.find((c) => c.summary === "Phase 1");
+    expect(phase!.progress).toEqual({ resolved: 1, total: 3 });
+  });
+
+  it("graph_tree leaf nodes have no progress", () => {
+    const { root } = openProject("prog-tree-leaf", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Leaf" }],
+    }, AGENT);
+
+    const result = handleTree({ project: "prog-tree-leaf" });
+    const leaf = result.tree.children![0];
+    expect(leaf.progress).toBeUndefined();
+  });
+});
