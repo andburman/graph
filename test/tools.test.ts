@@ -51,6 +51,17 @@ describe("graph_open", () => {
     expect(result.hint).toContain("Discovery is pending");
   });
 
+  it("skip_discovery creates project ready for planning", () => {
+    const result = handleOpen({ project: "quick", goal: "Quick project", skip_discovery: true }, AGENT) as any;
+    expect(result.root.discovery).toBe("done");
+    expect(result.hint).toContain("graph_plan");
+    expect(result.hint).not.toContain("Discovery");
+
+    // Should be able to plan immediately
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: result.root.id, summary: "Task" }] }, AGENT);
+    expect(plan.created).toHaveLength(1);
+  });
+
   it("returns hint for project with actionable tasks", () => {
     const { root } = openProject("active", "Active", AGENT) as any;
     handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }] }, AGENT);
@@ -472,6 +483,75 @@ describe("graph_restructure", () => {
     expect(result.applied).toBe(1);
     const ctx = handleContext({ node_id: parent2Id });
     expect(ctx.children.children).toHaveLength(1);
+  });
+
+  it("merges two nodes, transfers children and edges", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    const plan = handlePlan(
+      {
+        nodes: [
+          { ref: "source", parent_ref: root.id, summary: "Source" },
+          { ref: "target", parent_ref: root.id, summary: "Target" },
+          { ref: "child", parent_ref: "source", summary: "Source Child" },
+          { ref: "dep", parent_ref: root.id, summary: "Dependency" },
+          { ref: "waiter", parent_ref: root.id, summary: "Waiter", depends_on: ["source"] },
+        ],
+      },
+      AGENT
+    );
+
+    const sourceId = plan.created.find((c) => c.ref === "source")!.id;
+    const targetId = plan.created.find((c) => c.ref === "target")!.id;
+    const childId = plan.created.find((c) => c.ref === "child")!.id;
+
+    const result = handleRestructure(
+      { operations: [{ op: "merge", source: sourceId, target: targetId }] },
+      AGENT
+    );
+
+    expect(result.applied).toBe(1);
+
+    // Child should now be under target
+    const ctx = handleContext({ node_id: targetId });
+    expect(ctx.children.children!.some((c) => c.id === childId)).toBe(true);
+
+    // Waiter should now depend on target (edge transferred)
+    const waiterCtx = handleContext({ node_id: plan.created.find((c) => c.ref === "waiter")!.id });
+    expect(waiterCtx.depends_on.some((d) => d.node.id === targetId)).toBe(true);
+
+    // Source should be deleted
+    expect(() => handleContext({ node_id: sourceId })).toThrow();
+  });
+
+  it("deletes a node and its subtree", () => {
+    const { root } = openProject("del-test", "test", AGENT) as any;
+    const plan = handlePlan(
+      {
+        nodes: [
+          { ref: "keep", parent_ref: root.id, summary: "Keep" },
+          { ref: "delete-me", parent_ref: root.id, summary: "Delete Me" },
+          { ref: "child", parent_ref: "delete-me", summary: "Child of Delete" },
+        ],
+      },
+      AGENT
+    );
+
+    const deleteId = plan.created.find((c) => c.ref === "delete-me")!.id;
+
+    const result = handleRestructure(
+      { operations: [{ op: "delete", node_id: deleteId }] },
+      AGENT
+    );
+
+    expect(result.applied).toBe(1);
+
+    // Deleted nodes should be gone
+    expect(() => handleContext({ node_id: deleteId })).toThrow();
+
+    // Keep node should still exist
+    const keepId = plan.created.find((c) => c.ref === "keep")!.id;
+    const ctx = handleContext({ node_id: keepId });
+    expect(ctx.node.summary).toBe("Keep");
   });
 
   it("drops a subtree", () => {

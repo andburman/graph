@@ -88,6 +88,10 @@ const TOOLS = [
           type: "string",
           description: "Project goal/description. Used on creation only.",
         },
+        skip_discovery: {
+          type: "boolean",
+          description: "Skip discovery phase — create project ready for immediate planning. Default false.",
+        },
       },
     },
   },
@@ -305,7 +309,7 @@ const TOOLS = [
   {
     name: "graph_restructure",
     description:
-      "Modify graph structure: move (reparent), merge (combine two nodes), drop (resolve node + subtree with reason). Atomic. Reports newly_actionable nodes.",
+      "Modify graph structure: move (reparent), merge (combine two nodes), drop (resolve node + subtree with reason), delete (permanently remove node + subtree). Atomic. Reports newly_actionable nodes.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -316,7 +320,7 @@ const TOOLS = [
             properties: {
               op: {
                 type: "string",
-                enum: ["move", "merge", "drop"],
+                enum: ["move", "merge", "drop", "delete"],
               },
               node_id: { type: "string", description: "For move and drop" },
               new_parent: { type: "string", description: "For move" },

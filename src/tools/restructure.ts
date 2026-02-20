@@ -23,7 +23,12 @@ export interface DropOp {
   reason: string;
 }
 
-export type RestructureOp = MoveOp | MergeOp | DropOp;
+export interface DeleteOp {
+  op: "delete";
+  node_id: string;
+}
+
+export type RestructureOp = MoveOp | MergeOp | DropOp | DeleteOp;
 
 export interface RestructureInput {
   operations: RestructureOp[];
@@ -167,15 +172,13 @@ function handleMerge(op: MergeOp, agent: string): { node_id: string; result: str
     }
   }
 
-  // Log events
+  // Log merge on target (source will be deleted)
   logEvent(op.target, agent, "merged", [
     { field: "merged_from", before: null, after: op.source },
   ]);
-  logEvent(op.source, agent, "merged_into", [
-    { field: "merged_into", before: null, after: op.target },
-  ]);
 
-  // Delete source node
+  // Delete source: events, edges, then node (FK order)
+  db.prepare("DELETE FROM events WHERE node_id = ?").run(op.source);
   db.prepare("DELETE FROM edges WHERE from_node = ? OR to_node = ?").run(
     op.source,
     op.source
@@ -216,6 +219,25 @@ function handleDrop(op: DropOp, agent: string): { node_id: string; result: strin
   };
 }
 
+function handleDelete(op: DeleteOp, agent: string): { node_id: string; result: string } {
+  const db = getDb();
+  getNodeOrThrow(op.node_id);
+
+  const descendants = getAllDescendants(op.node_id);
+  const allIds = [op.node_id, ...descendants];
+  const placeholders = allIds.map(() => "?").join(",");
+
+  // Delete events, edges, then nodes (FK order)
+  db.prepare(`DELETE FROM events WHERE node_id IN (${placeholders})`).run(...allIds);
+  db.prepare(`DELETE FROM edges WHERE from_node IN (${placeholders}) OR to_node IN (${placeholders})`).run(...allIds, ...allIds);
+  db.prepare(`DELETE FROM nodes WHERE id IN (${placeholders})`).run(...allIds);
+
+  return {
+    node_id: op.node_id,
+    result: `deleted ${allIds.length} node(s)`,
+  };
+}
+
 export function handleRestructure(
   input: RestructureInput,
   agent: string
@@ -234,6 +256,8 @@ export function handleRestructure(
     } else if (op.op === "drop") {
       requireString((op as DropOp).node_id, `operations[${i}].node_id`);
       requireString((op as DropOp).reason, `operations[${i}].reason`);
+    } else if (op.op === "delete") {
+      requireString((op as DeleteOp).node_id, `operations[${i}].node_id`);
     } else {
       throw new Error(`Unknown operation: ${op.op}`);
     }
@@ -260,6 +284,10 @@ export function handleRestructure(
         case "drop":
           detail = handleDrop(op, agent);
           project = getNode(op.node_id)?.project ?? project;
+          break;
+        case "delete":
+          project = getNode(op.node_id)?.project ?? project;
+          detail = handleDelete(op, agent);
           break;
         default:
           throw new Error(`Unknown operation: ${(op as RestructureOp).op}`);
