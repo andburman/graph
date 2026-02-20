@@ -50,6 +50,9 @@ try {
   PKG_VERSION = pkg.version;
 } catch {}
 
+// Version banner — shown once on first tool call
+let versionBanner: string | null = `[graph] v${PKG_VERSION}`;
+
 // Non-blocking version check against npm registry
 let updateWarning: string | null = null;
 
@@ -552,8 +555,9 @@ export async function startServer(): Promise<void> {
       const content: Array<{ type: "text"; text: string }> = [
         { type: "text" as const, text: JSON.stringify(result, null, 2) },
       ];
-      if (updateWarning) {
-        content.push({ type: "text" as const, text: updateWarning });
+      if (versionBanner) {
+        content.push({ type: "text" as const, text: updateWarning ? `${versionBanner} — ${updateWarning}` : versionBanner });
+        versionBanner = null;
         updateWarning = null;
       }
       return { content };
