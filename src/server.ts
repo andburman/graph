@@ -22,9 +22,10 @@ import { getLicenseTier, type Tier } from "./license.js";
 import { checkNodeLimit, checkProjectLimit, capEvidenceLimit, checkScope } from "./gates.js";
 
 import { createHash } from "crypto";
-import { mkdirSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { join, resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
 // Config from env
 const AGENT_IDENTITY = process.env.GRAPH_AGENT ?? "default-agent";
@@ -39,6 +40,29 @@ function defaultDbPath(): string {
 }
 
 const DB_PATH = process.env.GRAPH_DB ?? defaultDbPath();
+
+// Read version from package.json
+const PKG_NAME = "@graph-tl/graph";
+let PKG_VERSION = "0.0.0";
+try {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+  PKG_VERSION = pkg.version;
+} catch {}
+
+// Non-blocking version check against npm registry
+let updateWarning: string | null = null;
+
+async function checkForUpdate(): Promise<void> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${PKG_NAME}/latest`);
+    if (!res.ok) return;
+    const data = await res.json() as { version: string };
+    if (data.version !== PKG_VERSION) {
+      updateWarning = `[graph] Update available: ${PKG_VERSION} → ${data.version}. Run: npx clear-npx-cache && restart MCP server.`;
+    }
+  } catch {}
+}
 
 // Tool definitions
 const TOOLS = [
@@ -403,9 +427,12 @@ export async function startServer(): Promise<void> {
   const tier: Tier = getLicenseTier(DB_PATH);
 
   const server = new Server(
-    { name: "graph", version: "0.1.0" },
+    { name: "graph", version: PKG_VERSION },
     { capabilities: { tools: {} } }
   );
+
+  // Fire-and-forget version check
+  checkForUpdate();
 
   // List tools
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -522,9 +549,14 @@ export async function startServer(): Promise<void> {
           };
       }
 
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-      };
+      const content: Array<{ type: "text"; text: string }> = [
+        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+      ];
+      if (updateWarning) {
+        content.push({ type: "text" as const, text: updateWarning });
+        updateWarning = null;
+      }
+      return { content };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
