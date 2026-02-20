@@ -74,7 +74,7 @@ export function handlePlan(input: PlanInput, agent: string): PlanResult {
         if (parentNode.discovery === "pending") {
           throw new EngineError(
             "discovery_pending",
-            `Cannot add children to "${parentNode.summary}" — discovery is pending. Complete the discovery interview first (set discovery to 'done' via graph_update), then decompose.`
+            `Cannot add children to "${parentNode.summary}" (${parentId}) — discovery is pending. Run: graph_update({ updates: [{ node_id: "${parentId}", discovery: "done" }] }) after completing discovery, then decompose.`
           );
         }
         project = parentNode.project;

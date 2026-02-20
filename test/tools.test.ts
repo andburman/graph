@@ -956,3 +956,36 @@ describe("resolved_reason shorthand", () => {
     expect(ctx.node.evidence.some((e) => e.ref === "Quick note")).toBe(true);
   });
 });
+
+describe("multi-project newly_actionable", () => {
+  it("reports newly actionable from all projects when resolving across projects", () => {
+    const { root: rootA } = openProject("proj-a", "Project A", AGENT) as any;
+    const { root: rootB } = openProject("proj-b", "Project B", AGENT) as any;
+
+    const planA = handlePlan({ nodes: [
+      { ref: "blocker", parent_ref: rootA.id, summary: "Blocker A" },
+      { ref: "waiting", parent_ref: rootA.id, summary: "Waiting A", depends_on: ["blocker"] },
+    ] }, AGENT);
+
+    const planB = handlePlan({ nodes: [
+      { ref: "blocker", parent_ref: rootB.id, summary: "Blocker B" },
+      { ref: "waiting", parent_ref: rootB.id, summary: "Waiting B", depends_on: ["blocker"] },
+    ] }, AGENT);
+
+    const blockerA = planA.created.find((c) => c.ref === "blocker")!.id;
+    const blockerB = planB.created.find((c) => c.ref === "blocker")!.id;
+
+    // Resolve both blockers in a single update call
+    const result = handleUpdate({
+      updates: [
+        { node_id: blockerA, resolved: true, resolved_reason: "done" },
+        { node_id: blockerB, resolved: true, resolved_reason: "done" },
+      ],
+    }, AGENT);
+
+    // Should report newly actionable from BOTH projects
+    expect(result.newly_actionable).toBeDefined();
+    expect(result.newly_actionable!.some((n) => n.summary === "Waiting A")).toBe(true);
+    expect(result.newly_actionable!.some((n) => n.summary === "Waiting B")).toBe(true);
+  });
+});

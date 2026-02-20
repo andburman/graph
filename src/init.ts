@@ -56,6 +56,9 @@ export function init(): void {
   console.log("");
   if (wrote) {
     console.log("Graph is ready. Restart Claude Code to load the MCP server.");
+    console.log("");
+    console.log("Then try:");
+    console.log('  "Use graph to plan building a REST API with auth and tests."');
   } else {
     console.log("Graph is already set up — nothing to do.");
   }

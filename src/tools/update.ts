@@ -40,7 +40,7 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
 
   const updated: Array<{ node_id: string; rev: number }> = [];
   const resolvedIds: string[] = [];
-  let project: string | null = null;
+  const resolvedProjects = new Set<string>();
 
   for (const entry of updates) {
     // Expand resolved_reason shorthand into evidence
@@ -66,7 +66,7 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
 
     if (entry.resolved === true) {
       resolvedIds.push(node.id);
-      project = node.project;
+      resolvedProjects.add(node.project);
     }
   }
 
@@ -107,8 +107,12 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
 
   const result: UpdateResult = { updated };
 
-  if (resolvedIds.length > 0 && project) {
-    result.newly_actionable = findNewlyActionable(project, resolvedIds);
+  if (resolvedIds.length > 0 && resolvedProjects.size > 0) {
+    const allActionable: Array<{ id: string; summary: string }> = [];
+    for (const proj of resolvedProjects) {
+      allActionable.push(...findNewlyActionable(proj, resolvedIds));
+    }
+    result.newly_actionable = allActionable;
   }
 
   if (autoResolved.length > 0) {

@@ -4,3 +4,5 @@ dist/
 *.db-wal
 *.db-shm
 npm_recovery_codes.txt
+.DS_Store
+add-next-tasks.mjs
