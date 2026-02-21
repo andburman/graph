@@ -404,6 +404,10 @@ const TOOLS = [
           type: "number",
           description: "Max evidence entries to return (default 20, max 50)",
         },
+        strict: {
+          type: "boolean",
+          description: "When true and checklist has action items, prepend a warning to the hint. Recommended for automated/unattended sessions.",
+        },
       },
     },
   },

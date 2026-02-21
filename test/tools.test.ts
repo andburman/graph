@@ -758,6 +758,151 @@ describe("graph_onboard", () => {
   });
 });
 
+describe("graph_onboard checklist", () => {
+  it("returns all 5 checks as pass for a healthy project", () => {
+    const { root } = openProject("healthy", "Healthy project", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "t1", parent_ref: root.id, summary: "Task 1" },
+        { ref: "t2", parent_ref: root.id, summary: "Task 2" },
+      ],
+    }, AGENT);
+
+    // Resolve one task with evidence
+    const t1Id = plan.created.find((c: any) => c.ref === "t1")!.id;
+    handleUpdate({
+      updates: [{ node_id: t1Id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+    }, AGENT);
+
+    // Add knowledge
+    handleKnowledgeWrite({ project: "healthy", key: "arch", content: "Architecture notes" }, AGENT);
+
+    const result = handleOnboard({ project: "healthy" }) as any;
+    expect(result.checklist).toHaveLength(5);
+    const checks = result.checklist.map((c: any) => c.check);
+    expect(checks).toEqual(["review_evidence", "review_knowledge", "confirm_blockers", "check_stale", "plan_next_actions"]);
+    // All should pass for a healthy project
+    for (const item of result.checklist) {
+      expect(item.status).toBe("pass");
+    }
+  });
+
+  it("flags missing evidence as action_required on mature projects", () => {
+    const { root } = openProject("no-ev", "No evidence project", AGENT) as any;
+
+    // Create and resolve 5+ tasks without evidence (need to bypass evidence requirement)
+    // Actually, resolving requires evidence. So create tasks and resolve with evidence,
+    // then clear evidence directly in DB to simulate the condition.
+    const refs = ["a", "b", "c", "d", "e"];
+    const plan = handlePlan({
+      nodes: refs.map((r) => ({ ref: r, parent_ref: root.id, summary: `Task ${r}` })),
+    }, AGENT);
+
+    for (const created of plan.created) {
+      handleUpdate({
+        updates: [{ node_id: created.id, resolved: true, add_evidence: [{ type: "note", ref: "done" }] }],
+      }, AGENT);
+    }
+
+    // Clear all evidence directly to simulate missing evidence (include root in case it auto-resolved)
+    const db = getDb();
+    db.prepare("UPDATE nodes SET evidence = '[]' WHERE project = ?").run("no-ev");
+
+    const result = handleOnboard({ project: "no-ev" }) as any;
+    const evCheck = result.checklist.find((c: any) => c.check === "review_evidence");
+    expect(evCheck.status).toBe("action_required");
+    expect(evCheck.message).toContain("resolved task(s) exist but none have evidence");
+  });
+
+  it("flags blocked items as action_required", () => {
+    const { root } = openProject("blocked", "Blocked project", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "t1", parent_ref: root.id, summary: "Blocked task" },
+        { ref: "t2", parent_ref: root.id, summary: "Free task" },
+      ],
+    }, AGENT);
+
+    const t1Id = plan.created.find((c: any) => c.ref === "t1")!.id;
+    handleUpdate({
+      updates: [{ node_id: t1Id, blocked: true, blocked_reason: "Waiting on API key" }],
+    }, AGENT);
+
+    const result = handleOnboard({ project: "blocked" }) as any;
+    const blockerCheck = result.checklist.find((c: any) => c.check === "confirm_blockers");
+    expect(blockerCheck.status).toBe("action_required");
+    expect(blockerCheck.message).toContain("1 blocked");
+  });
+
+  it("flags stale tasks as warn", () => {
+    const { root } = openProject("stale", "Stale project", AGENT) as any;
+    handlePlan({
+      nodes: [{ ref: "old", parent_ref: root.id, summary: "Old task" }],
+    }, AGENT);
+
+    // Backdate the task to 10 days ago
+    const db = getDb();
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare("UPDATE nodes SET updated_at = ? WHERE project = ? AND parent IS NOT NULL").run(tenDaysAgo, "stale");
+
+    const result = handleOnboard({ project: "stale" }) as any;
+    const staleCheck = result.checklist.find((c: any) => c.check === "check_stale");
+    expect(staleCheck.status).toBe("warn");
+    expect(staleCheck.message).toContain("not updated in 7+ days");
+  });
+
+  it("flags missing knowledge on mature project as warn", () => {
+    const { root } = openProject("mature", "Mature project", AGENT) as any;
+
+    // Create and resolve 5 tasks with evidence (no knowledge)
+    const refs = ["a", "b", "c", "d", "e"];
+    const plan = handlePlan({
+      nodes: refs.map((r) => ({ ref: r, parent_ref: root.id, summary: `Task ${r}` })),
+    }, AGENT);
+
+    for (const created of plan.created) {
+      handleUpdate({
+        updates: [{ node_id: created.id, resolved: true, add_evidence: [{ type: "note", ref: "done" }] }],
+      }, AGENT);
+    }
+
+    const result = handleOnboard({ project: "mature" }) as any;
+    const knowledgeCheck = result.checklist.find((c: any) => c.check === "review_knowledge");
+    expect(knowledgeCheck.status).toBe("warn");
+    expect(knowledgeCheck.message).toContain("Mature project");
+  });
+
+  it("strict mode prepends warning to hint when action items exist", () => {
+    const { root } = openProject("strict", "Strict project", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "t1", parent_ref: root.id, summary: "Blocked task" }],
+    }, AGENT);
+
+    const t1Id = plan.created.find((c: any) => c.ref === "t1")!.id;
+    handleUpdate({
+      updates: [{ node_id: t1Id, blocked: true, blocked_reason: "Waiting" }],
+    }, AGENT);
+
+    // Without strict — no warning prefix
+    const normal = handleOnboard({ project: "strict" }) as any;
+    expect(normal.hint).not.toContain("Rehydrate checklist");
+
+    // With strict — warning prefix present
+    const strictResult = handleOnboard({ project: "strict", strict: true }) as any;
+    expect(strictResult.hint).toContain("Rehydrate checklist has action items");
+  });
+
+  it("empty project checklist is sensible (no false alarms)", () => {
+    openProject("empty", "Empty project", AGENT);
+
+    const result = handleOnboard({ project: "empty" }) as any;
+    expect(result.checklist).toHaveLength(5);
+    // No action_required on an empty project
+    const actionRequired = result.checklist.filter((c: any) => c.status === "action_required");
+    expect(actionRequired).toHaveLength(0);
+  });
+});
+
 describe("graph_agent_config", () => {
   it("returns agent file content for all tiers (free retention hook)", () => {
     const result = handleAgentConfig("1.2.3");

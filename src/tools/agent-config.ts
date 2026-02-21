@@ -31,6 +31,8 @@ Read the \`hint\` field first — it tells you exactly what to do next. Then rea
 
 This catches work done ad-hoc or through plan files that bypassed the graph. It's cheap to run and prevents silent context loss.
 
+**Rehydrate checklist:** \`graph_onboard\` returns a \`checklist\` array — a sequence of checks to verify before claiming work. Each item has \`check\` (ID), \`status\` (\`pass\`/\`warn\`/\`action_required\`), and \`message\`. If any item is \`action_required\`, address it before calling \`graph_next\`. For automated/unattended sessions, use \`strict: true\` to get a warning in the hint when action items exist.
+
 **Continuity confidence:** \`graph_onboard\` returns a \`continuity_confidence\` signal (\`high\`/\`medium\`/\`low\`) with a score and reasons. This tells you how reliable the inherited context is.
 - **high** (70-100): proceed normally
 - **medium** (40-69): surface reasons to the user, proceed with caution

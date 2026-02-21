@@ -10,6 +10,13 @@ import type { NodeRow, Evidence } from "../types.js";
 export interface OnboardInput {
   project?: string;
   evidence_limit?: number;
+  strict?: boolean;
+}
+
+export interface ChecklistItem {
+  check: string;
+  status: "pass" | "warn" | "action_required";
+  message: string;
 }
 
 export interface OnboardResult {
@@ -66,11 +73,83 @@ export interface OnboardResult {
     summary: string;
     properties: Record<string, unknown>;
   }>;
+  checklist: ChecklistItem[];
+}
+
+function computeChecklist(
+  summary: OnboardResult["summary"],
+  recent_evidence: OnboardResult["recent_evidence"],
+  knowledge: OnboardResult["knowledge"],
+  actionable: OnboardResult["actionable"],
+  db: ReturnType<typeof getDb>,
+  project: string,
+): ChecklistItem[] {
+  const checklist: ChecklistItem[] = [];
+
+  // 1. review_evidence — check evidence coverage on resolved tasks
+  if (summary.resolved === 0) {
+    checklist.push({ check: "review_evidence", status: "pass", message: "No resolved tasks yet — nothing to review." });
+  } else if (recent_evidence.length > 0) {
+    checklist.push({ check: "review_evidence", status: "pass", message: "Recent evidence exists — review for context." });
+  } else {
+    // Resolved tasks exist but no evidence at all
+    const resolvedWithEvidence = (db.prepare(
+      "SELECT COUNT(*) as cnt FROM nodes WHERE project = ? AND parent IS NOT NULL AND resolved = 1 AND evidence != '[]'"
+    ).get(project) as { cnt: number }).cnt;
+    if (resolvedWithEvidence === 0 && summary.resolved < 5) {
+      checklist.push({ check: "review_evidence", status: "warn", message: `${summary.resolved} resolved task(s) have no evidence.` });
+    } else if (resolvedWithEvidence === 0) {
+      checklist.push({ check: "review_evidence", status: "action_required", message: `${summary.resolved} resolved task(s) exist but none have evidence — context may be lost.` });
+    } else {
+      checklist.push({ check: "review_evidence", status: "pass", message: "Evidence exists on resolved tasks." });
+    }
+  }
+
+  // 2. review_knowledge — check knowledge entries
+  if (knowledge.length > 0) {
+    checklist.push({ check: "review_knowledge", status: "pass", message: `${knowledge.length} knowledge entry(s) available.` });
+  } else if (summary.resolved >= 5) {
+    checklist.push({ check: "review_knowledge", status: "warn", message: "Mature project (5+ resolved tasks) with no knowledge entries." });
+  } else {
+    checklist.push({ check: "review_knowledge", status: "pass", message: "No knowledge entries yet — expected for early projects." });
+  }
+
+  // 3. confirm_blockers — check for blocked items
+  if (summary.blocked === 0) {
+    checklist.push({ check: "confirm_blockers", status: "pass", message: "No blocked items." });
+  } else {
+    checklist.push({ check: "confirm_blockers", status: "action_required", message: `${summary.blocked} blocked item(s) — confirm blockers are still valid before proceeding.` });
+  }
+
+  // 4. check_stale — unresolved tasks not updated in 7+ days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const staleCount = (db.prepare(
+    "SELECT COUNT(*) as cnt FROM nodes WHERE project = ? AND parent IS NOT NULL AND resolved = 0 AND updated_at < ?"
+  ).get(project, sevenDaysAgo) as { cnt: number }).cnt;
+  if (staleCount === 0) {
+    checklist.push({ check: "check_stale", status: "pass", message: "No stale unresolved tasks." });
+  } else {
+    checklist.push({ check: "check_stale", status: "warn", message: `${staleCount} unresolved task(s) not updated in 7+ days.` });
+  }
+
+  // 5. plan_next_actions — check actionable tasks exist
+  if (actionable.length > 0) {
+    checklist.push({ check: "plan_next_actions", status: "pass", message: `${actionable.length} actionable task(s) ready.` });
+  } else if (summary.unresolved > 0) {
+    checklist.push({ check: "plan_next_actions", status: "warn", message: "No actionable tasks — all remaining work is blocked." });
+  } else if (summary.total <= 1) {
+    checklist.push({ check: "plan_next_actions", status: "pass", message: "Empty project — use graph_plan to add tasks." });
+  } else {
+    checklist.push({ check: "plan_next_actions", status: "pass", message: "All tasks resolved." });
+  }
+
+  return checklist;
 }
 
 // [sl:1pRRsWFomcv04XAkdLMAj] Allow graph_onboard without project name
 export function handleOnboard(input: OnboardInput): OnboardResult | { projects: ReturnType<typeof listProjects>; hint: string } {
   const evidenceLimit = optionalNumber(input?.evidence_limit, "evidence_limit", 1, 50) ?? 20;
+  const strict = input?.strict === true;
   const db = getDb();
 
   // Auto-resolve project when not specified
@@ -253,6 +332,15 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
   // 9. Continuity confidence signal
   const continuity_confidence = computeContinuityConfidence(project);
 
+  // 10. Rehydrate checklist
+  const checklist = computeChecklist(summary, recent_evidence, knowledgeRows, actionable, db, project);
+
+  // Strict mode: prepend hint warning when action items exist
+  if (strict && checklist.some((c) => c.status === "action_required")) {
+    const prefix = "\u26A0 Rehydrate checklist has action items \u2014 review before claiming work.";
+    hint = hint ? `${prefix}\n${hint}` : prefix;
+  }
+
   return {
     project,
     goal: root.summary,
@@ -267,5 +355,6 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
     last_activity,
     continuity_confidence,
     actionable,
+    checklist,
   };
 }
