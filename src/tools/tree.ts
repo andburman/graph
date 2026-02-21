@@ -1,4 +1,4 @@
-import { getProjectRoot, getChildren, getSubtreeProgress } from "../nodes.js";
+import { getProjectRoot, getChildren, getSubtreeProgress, listProjects } from "../nodes.js";
 import { requireString, optionalNumber } from "../validate.js";
 import { EngineError } from "../validate.js";
 import type { Node } from "../types.js";
@@ -78,7 +78,12 @@ export function handleTree(input: TreeInput): TreeResult {
 
   const root = getProjectRoot(project);
   if (!root) {
-    throw new EngineError("project_not_found", `Project not found: ${project}`);
+    const available = listProjects();
+    const names = available.map((p) => p.project);
+    const suffix = names.length > 0
+      ? ` Available projects: ${names.join(", ")}`
+      : " No projects exist yet.";
+    throw new EngineError("project_not_found", `Project not found: ${project}.${suffix}`);
   }
 
   const stats = { total: 0, resolved: 0 };

@@ -1,7 +1,20 @@
 import { nanoid } from "nanoid";
 import { getDb } from "../db.js";
-import { getProjectRoot } from "../nodes.js";
+import { getProjectRoot, listProjects } from "../nodes.js";
 import { EngineError, requireString } from "../validate.js";
+
+function requireProject(project: string) {
+  const root = getProjectRoot(project);
+  if (!root) {
+    const available = listProjects();
+    const names = available.map((p) => p.project);
+    const suffix = names.length > 0
+      ? ` Available projects: ${names.join(", ")}`
+      : " No projects exist yet.";
+    throw new EngineError("project_not_found", `Project not found: ${project}.${suffix}`);
+  }
+  return root;
+}
 
 // [sl:4PrMkE09nf6ptz8LLR9rW] Knowledge tools — persistent project-level knowledge store
 
@@ -28,10 +41,7 @@ export function handleKnowledgeWrite(input: KnowledgeWriteInput, agent: string) 
   const key = requireString(input.key, "key");
   const content = requireString(input.content, "content");
 
-  const root = getProjectRoot(project);
-  if (!root) {
-    throw new EngineError("not_found", `Project '${project}' not found`);
-  }
+  requireProject(project);
 
   const db = getDb();
   const now = new Date().toISOString();
@@ -64,10 +74,7 @@ export interface KnowledgeReadInput {
 export function handleKnowledgeRead(input: KnowledgeReadInput) {
   const project = requireString(input.project, "project");
 
-  const root = getProjectRoot(project);
-  if (!root) {
-    throw new EngineError("not_found", `Project '${project}' not found`);
-  }
+  requireProject(project);
 
   const db = getDb();
 
@@ -107,10 +114,7 @@ export function handleKnowledgeDelete(input: KnowledgeDeleteInput) {
   const project = requireString(input.project, "project");
   const key = requireString(input.key, "key");
 
-  const root = getProjectRoot(project);
-  if (!root) {
-    throw new EngineError("not_found", `Project '${project}' not found`);
-  }
+  requireProject(project);
 
   const db = getDb();
   const result = db
@@ -135,10 +139,7 @@ export function handleKnowledgeSearch(input: KnowledgeSearchInput) {
   const project = requireString(input.project, "project");
   const query = requireString(input.query, "query");
 
-  const root = getProjectRoot(project);
-  if (!root) {
-    throw new EngineError("not_found", `Project '${project}' not found`);
-  }
+  requireProject(project);
 
   const db = getDb();
   const pattern = `%${query}%`;
