@@ -1,8 +1,18 @@
 import Database from "better-sqlite3";
 import path from "path";
+import { createHash } from "crypto";
+import { homedir } from "os";
 
 let db: Database.Database;
 let dbPath: string;
+
+// Shared DB path resolution — used by MCP server and UI server
+export function resolveDbPath(): string {
+  if (process.env.GRAPH_DB) return process.env.GRAPH_DB;
+  const projectDir = path.resolve(".");
+  const hash = createHash("sha256").update(projectDir).digest("hex").slice(0, 16);
+  return path.join(homedir(), ".graph", "db", hash, "graph.db");
+}
 
 export function setDbPath(p: string): void {
   dbPath = p;

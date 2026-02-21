@@ -7,7 +7,7 @@ import {
   ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { setDbPath, closeDb, checkpointDb } from "./db.js";
+import { setDbPath, closeDb, checkpointDb, resolveDbPath } from "./db.js";
 import { ValidationError, EngineError } from "./validate.js";
 import { handleOpen } from "./tools/open.js";
 import { handlePlan } from "./tools/plan.js";
@@ -36,15 +36,8 @@ import { fileURLToPath } from "url";
 const AGENT_IDENTITY = process.env.GRAPH_AGENT ?? "default-agent";
 const CLAIM_TTL = parseInt(process.env.GRAPH_CLAIM_TTL ?? "60", 10);
 
-function defaultDbPath(): string {
-  const projectDir = resolve(".");
-  const hash = createHash("sha256").update(projectDir).digest("hex").slice(0, 16);
-  const dir = join(homedir(), ".graph", "db", hash);
-  mkdirSync(dir, { recursive: true });
-  return join(dir, "graph.db");
-}
-
-const DB_PATH = process.env.GRAPH_DB ?? defaultDbPath();
+const DB_PATH = resolveDbPath();
+mkdirSync(dirname(DB_PATH), { recursive: true });
 
 // Read version from package.json
 const PKG_NAME = "@graph-tl/graph";
