@@ -102,6 +102,8 @@ graph_update({ updates: [{
 
 Evidence is mandatory. Write notes as if briefing an agent who has never seen the codebase — they should understand what was done and why without reading the code.
 
+**Plan mode reminder:** If you use plan mode (or any multi-step planning approach), always include a final step in the plan to resolve the graph node with evidence. Committing code is NOT the end of the task — the graph node must be resolved. The plan is not complete until it includes a \`graph_update\` resolution step.
+
 ## 7. PAUSE
 After resolving a task, STOP. Show the user the project status using \`graph_status\`, then wait for them to say "continue" before claiming the next task.
 

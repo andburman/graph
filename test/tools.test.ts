@@ -778,9 +778,9 @@ describe("graph_onboard checklist", () => {
     handleKnowledgeWrite({ project: "healthy", key: "arch", content: "Architecture notes" }, AGENT);
 
     const result = handleOnboard({ project: "healthy" }) as any;
-    expect(result.checklist).toHaveLength(5);
+    expect(result.checklist).toHaveLength(6);
     const checks = result.checklist.map((c: any) => c.check);
-    expect(checks).toEqual(["review_evidence", "review_knowledge", "confirm_blockers", "check_stale", "plan_next_actions"]);
+    expect(checks).toEqual(["review_evidence", "review_knowledge", "confirm_blockers", "check_stale", "resolve_claimed", "plan_next_actions"]);
     // All should pass for a healthy project
     for (const item of result.checklist) {
       expect(item.status).toBe("pass");
@@ -892,11 +892,44 @@ describe("graph_onboard checklist", () => {
     expect(strictResult.hint).toContain("Rehydrate checklist has action items");
   });
 
+  it("flags claimed-but-unresolved nodes as action_required", () => {
+    const { root } = openProject("claimed", "Claimed project", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "t1", parent_ref: root.id, summary: "Claimed task" }],
+    }, AGENT);
+
+    // Claim the task via graph_next
+    handleNext({ project: "claimed", claim: true }, AGENT, 60);
+
+    const result = handleOnboard({ project: "claimed" }) as any;
+    const claimCheck = result.checklist.find((c: any) => c.check === "resolve_claimed");
+    expect(claimCheck.status).toBe("action_required");
+    expect(claimCheck.message).toContain("1 claimed");
+  });
+
+  it("passes resolve_claimed when claimed node is resolved", () => {
+    const { root } = openProject("resolved-claim", "Resolved claim", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "t1", parent_ref: root.id, summary: "Task" }],
+    }, AGENT);
+
+    // Claim and resolve
+    const next = handleNext({ project: "resolved-claim", claim: true }, AGENT, 60);
+    const taskId = next.nodes[0].node.id;
+    handleUpdate({
+      updates: [{ node_id: taskId, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+    }, AGENT);
+
+    const result = handleOnboard({ project: "resolved-claim" }) as any;
+    const claimCheck = result.checklist.find((c: any) => c.check === "resolve_claimed");
+    expect(claimCheck.status).toBe("pass");
+  });
+
   it("empty project checklist is sensible (no false alarms)", () => {
     openProject("empty", "Empty project", AGENT);
 
     const result = handleOnboard({ project: "empty" }) as any;
-    expect(result.checklist).toHaveLength(5);
+    expect(result.checklist).toHaveLength(6);
     // No action_required on an empty project
     const actionRequired = result.checklist.filter((c: any) => c.status === "action_required");
     expect(actionRequired).toHaveLength(0);

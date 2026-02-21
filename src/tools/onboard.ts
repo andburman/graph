@@ -132,7 +132,17 @@ function computeChecklist(
     checklist.push({ check: "check_stale", status: "warn", message: `${staleCount} unresolved task(s) not updated in 7+ days.` });
   }
 
-  // 5. plan_next_actions — check actionable tasks exist
+  // 5. resolve_claimed — detect claimed-but-unresolved nodes (forgotten resolutions)
+  const claimedCount = (db.prepare(
+    "SELECT COUNT(*) as cnt FROM nodes WHERE project = ? AND parent IS NOT NULL AND resolved = 0 AND json_extract(properties, '$._claimed_by') IS NOT NULL"
+  ).get(project) as { cnt: number }).cnt;
+  if (claimedCount === 0) {
+    checklist.push({ check: "resolve_claimed", status: "pass", message: "No claimed unresolved tasks." });
+  } else {
+    checklist.push({ check: "resolve_claimed", status: "action_required", message: `${claimedCount} claimed task(s) still unresolved — resolve or unclaim before starting new work.` });
+  }
+
+  // 6. plan_next_actions — check actionable tasks exist
   if (actionable.length > 0) {
     checklist.push({ check: "plan_next_actions", status: "pass", message: `${actionable.length} actionable task(s) ready.` });
   } else if (summary.unresolved > 0) {
