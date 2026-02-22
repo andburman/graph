@@ -44,6 +44,16 @@ export function handlePlan(input: PlanInput, agent: string): PlanResult {
     refs.add(node.ref);
   }
 
+  // Pre-scan: identify refs used as parents within this batch.
+  // Nodes that will have children get discovery:"done" automatically —
+  // the act of decomposition IS the discovery for parent nodes.
+  const batchParentRefs = new Set<string>();
+  for (const node of nodes) {
+    if (node.parent_ref && refs.has(node.parent_ref)) {
+      batchParentRefs.add(node.parent_ref);
+    }
+  }
+
   // Run atomically
   const transaction = db.transaction(() => {
     // First pass: create all nodes
@@ -92,6 +102,9 @@ export function handlePlan(input: PlanInput, agent: string): PlanResult {
         project,
         parent: parentId,
         summary: nodeInput.summary,
+        // Batch parents get discovery:"done" — decomposition IS discovery.
+        // Leaf nodes in the batch keep "pending" so agents scope them before working.
+        discovery: batchParentRefs.has(nodeInput.ref) ? "done" : "pending",
         context_links: nodeInput.context_links,
         properties: nodeInput.properties,
         agent,

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { initDb } from "../src/db.js";
 import { handleOpen } from "../src/tools/open.js";
 import { handlePlan } from "../src/tools/plan.js";
@@ -14,6 +14,7 @@ import { handleAgentConfig } from "../src/tools/agent-config.js";
 import { handleTree } from "../src/tools/tree.js";
 import { handleStatus } from "../src/tools/status.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "../src/tools/knowledge.js";
+import { handleRetro } from "../src/tools/retro.js";
 import { updateNode } from "../src/nodes.js";
 import { ValidationError, EngineError } from "../src/validate.js";
 import { computeContinuityConfidence } from "../src/continuity.js";
@@ -136,10 +137,14 @@ describe("discovery enforcement", () => {
     expect(result.created).toHaveLength(1);
   });
 
-  it("graph_plan allows children when parent has discovery:null (legacy nodes)", () => {
+  it("legacy nodes with discovery:null in DB are treated as done (allows children)", () => {
     const { root } = handleOpen({ project: "disc", goal: "Test" }, AGENT) as any;
-    // Set discovery to null to simulate a legacy node
+    // Set discovery to null to simulate a legacy DB row
     updateNode({ node_id: root.id, agent: AGENT, discovery: null as any });
+
+    // rowToNode maps null -> "done" for backward compat
+    const ctx = handleContext({ node_id: root.id });
+    expect(ctx.node.discovery).toBe("done");
 
     const result = handlePlan(
       { nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }] },
@@ -177,6 +182,42 @@ describe("discovery enforcement", () => {
       e.changes && JSON.stringify(e.changes).includes("discovery")
     );
     expect(discoveryEvent).toBeDefined();
+  });
+
+  it("graph_plan sets discovery:done on batch parents, pending on leaf nodes", () => {
+    const { root } = handleOpen({ project: "disc", goal: "Test" }, AGENT) as any;
+    updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
+
+    const result = handlePlan({
+      nodes: [
+        { ref: "parent", parent_ref: root.id, summary: "Parent task" },
+        { ref: "child1", parent_ref: "parent", summary: "Child 1" },
+        { ref: "child2", parent_ref: "parent", summary: "Child 2" },
+      ],
+    }, AGENT);
+
+    // Parent in batch gets discovery:"done" (decomposition IS discovery)
+    const parentCtx = handleContext({ node_id: result.created[0].id });
+    expect(parentCtx.node.discovery).toBe("done");
+
+    // Leaf nodes in batch get discovery:"pending"
+    const child1Ctx = handleContext({ node_id: result.created[1].id });
+    expect(child1Ctx.node.discovery).toBe("pending");
+
+    const child2Ctx = handleContext({ node_id: result.created[2].id });
+    expect(child2Ctx.node.discovery).toBe("pending");
+  });
+
+  it("all new nodes default to discovery:pending", () => {
+    const { root } = handleOpen({ project: "disc", goal: "Test" }, AGENT) as any;
+    updateNode({ node_id: root.id, agent: AGENT, discovery: "done" });
+
+    const result = handlePlan({
+      nodes: [{ ref: "leaf", parent_ref: root.id, summary: "A leaf task" }],
+    }, AGENT);
+
+    const ctx = handleContext({ node_id: result.created[0].id });
+    expect(ctx.node.discovery).toBe("pending");
   });
 });
 
@@ -1855,5 +1896,258 @@ describe("delete protection", () => {
     // No evidence added — delete should succeed
     const result = handleRestructure({ operations: [{ op: "delete", node_id: root.id }] }, AGENT);
     expect(result.applied).toBe(1);
+  });
+});
+
+describe("graph_retro", () => {
+  it("returns context without findings (first call)", () => {
+    const { root } = openProject("retro-test", "Test retro", AGENT) as any;
+
+    // Create and resolve a task
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }] }, AGENT);
+    handleUpdate({
+      updates: [{ node_id: plan.created[0].id, resolved: true, add_evidence: [{ type: "note", ref: "Did the thing" }] }],
+    }, AGENT);
+
+    const result = handleRetro({ project: "retro-test" }, AGENT) as any;
+    expect(result.context.task_count).toBe(1);
+    expect(result.context.resolved_since_last_retro).toHaveLength(1);
+    expect(result.context.resolved_since_last_retro[0].summary).toBe("Task A");
+    expect(result.stored).toBeUndefined();
+    expect(result.hint).toContain("1 task(s) resolved");
+  });
+
+  it("stores findings as knowledge entry", () => {
+    const { root } = openProject("retro-store", "Test retro", AGENT) as any;
+
+    // Create and resolve a task
+    const plan = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }] }, AGENT);
+    handleUpdate({
+      updates: [{ node_id: plan.created[0].id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+    }, AGENT);
+
+    const result = handleRetro({
+      project: "retro-store",
+      findings: [
+        { category: "workflow_improvement", insight: "Build step was slow" },
+        { category: "claude_md_candidate", insight: "Always check graph knowledge first", suggestion: "Check graph_knowledge_read before searching files" },
+      ],
+    }, AGENT) as any;
+
+    expect(result.stored.finding_count).toBe(2);
+    expect(result.stored.claude_md_candidates).toHaveLength(1);
+    expect(result.stored.claude_md_candidates[0].suggestion).toContain("graph_knowledge_read");
+    expect(result.hint).toContain("CLAUDE.md candidate");
+
+    // Verify knowledge entry was created
+    const knowledge = handleKnowledgeRead({ project: "retro-store" }) as any;
+    const retroEntry = knowledge.entries.find((e: any) => e.key.startsWith("retro-"));
+    expect(retroEntry).toBeDefined();
+    expect(retroEntry.content).toContain("CLAUDE.md Instruction Candidates");
+    expect(retroEntry.content).toContain("Always check graph knowledge first");
+  });
+
+  it("scopes retro to a subtree", () => {
+    const { root } = openProject("retro-scope", "Test retro", AGENT) as any;
+
+    // Create two branches
+    const plan = handlePlan({
+      nodes: [
+        { ref: "parent-a", parent_ref: root.id, summary: "Branch A" },
+        { ref: "a1", parent_ref: "parent-a", summary: "A1" },
+        { ref: "parent-b", parent_ref: root.id, summary: "Branch B" },
+        { ref: "b1", parent_ref: "parent-b", summary: "B1" },
+      ],
+    }, AGENT);
+
+    // Resolve tasks in both branches
+    handleUpdate({
+      updates: [{ node_id: plan.created[1].id, resolved: true, add_evidence: [{ type: "note", ref: "Done A1" }] }],
+    }, AGENT);
+    handleUpdate({
+      updates: [{ node_id: plan.created[3].id, resolved: true, add_evidence: [{ type: "note", ref: "Done B1" }] }],
+    }, AGENT);
+
+    // Retro scoped to Branch A
+    const result = handleRetro({ project: "retro-scope", scope: plan.created[0].id }, AGENT) as any;
+    expect(result.context.task_count).toBe(1);
+    expect(result.context.resolved_since_last_retro[0].summary).toBe("A1");
+  });
+
+  it("second retro only shows tasks resolved since first retro", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T10:00:00.000Z"));
+      const { root } = openProject("retro-since", "Test retro", AGENT) as any;
+
+      // Create and resolve first task
+      const plan1 = handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }] }, AGENT);
+      handleUpdate({
+        updates: [{ node_id: plan1.created[0].id, resolved: true, add_evidence: [{ type: "note", ref: "Done A" }] }],
+      }, AGENT);
+
+      // Advance time, then file first retro
+      vi.setSystemTime(new Date("2026-01-01T10:01:00.000Z"));
+      handleRetro({
+        project: "retro-since",
+        findings: [{ category: "workflow_improvement", insight: "First retro finding" }],
+      }, AGENT);
+
+      // Advance time, then create and resolve second task
+      vi.setSystemTime(new Date("2026-01-01T10:02:00.000Z"));
+      const plan2 = handlePlan({ nodes: [{ ref: "b", parent_ref: root.id, summary: "Task B" }] }, AGENT);
+      handleUpdate({
+        updates: [{ node_id: plan2.created[0].id, resolved: true, add_evidence: [{ type: "note", ref: "Done B" }] }],
+      }, AGENT);
+
+      // Second retro should only show Task B
+      const result = handleRetro({ project: "retro-since" }, AGENT) as any;
+      expect(result.context.task_count).toBe(1);
+      expect(result.context.resolved_since_last_retro[0].summary).toBe("Task B");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects invalid finding categories", () => {
+    openProject("retro-invalid", "Test retro", AGENT);
+
+    expect(() =>
+      handleRetro({
+        project: "retro-invalid",
+        findings: [{ category: "invalid_category" as any, insight: "Something" }],
+      }, AGENT)
+    ).toThrow(/category must be one of/);
+  });
+
+  it("returns empty context when no tasks resolved", () => {
+    openProject("retro-empty", "Test retro", AGENT);
+
+    const result = handleRetro({ project: "retro-empty" }, AGENT) as any;
+    expect(result.context.task_count).toBe(0);
+    expect(result.hint).toContain("Nothing to reflect on");
+  });
+
+  it("throws on non-existent project", () => {
+    expect(() =>
+      handleRetro({ project: "nonexistent" }, AGENT)
+    ).toThrow(/Project not found/);
+  });
+});
+
+describe("retro nudges", () => {
+  it("graph_update nudges retro when parent auto-resolves", () => {
+    const { root } = openProject("nudge-update", "Test nudge", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "parent", parent_ref: root.id, summary: "Feature A" },
+        { ref: "child", parent_ref: "parent", summary: "Task 1" },
+        { ref: "other", parent_ref: root.id, summary: "Other work" },
+      ],
+    }, AGENT);
+
+    // Resolve the only child of "Feature A" — auto-resolves parent, but root still has "Other work"
+    const result = handleUpdate({
+      updates: [{ node_id: plan.created[1].id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+    }, AGENT) as any;
+
+    expect(result.auto_resolved).toHaveLength(1);
+    expect(result.retro_nudge).toBeDefined();
+    expect(result.retro_nudge).toContain("Milestone completed");
+    expect(result.retro_nudge).toContain("Feature A");
+    expect(result.retro_nudge).toContain("graph_retro");
+  });
+
+  it("graph_update has no retro nudge when no auto-resolve", () => {
+    const { root } = openProject("nudge-none", "Test nudge", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+      ],
+    }, AGENT);
+
+    // Resolve one task — parent still has unresolved children
+    const result = handleUpdate({
+      updates: [{ node_id: plan.created[0].id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+    }, AGENT) as any;
+
+    expect(result.retro_nudge).toBeUndefined();
+  });
+
+  it("graph_next nudges retro after threshold resolved tasks", () => {
+    const { root } = openProject("nudge-next", "Test nudge", AGENT) as any;
+
+    // Create 6 tasks (threshold is 5)
+    const refs = Array.from({ length: 6 }, (_, i) => ({
+      ref: `t${i}`, parent_ref: root.id, summary: `Task ${i}`,
+    }));
+    const plan = handlePlan({ nodes: refs }, AGENT);
+
+    // Resolve 5 of them
+    for (let i = 0; i < 5; i++) {
+      handleUpdate({
+        updates: [{ node_id: plan.created[i].id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+      }, AGENT);
+    }
+
+    // graph_next should include retro nudge
+    const next = handleNext({ project: "nudge-next" }, AGENT) as any;
+    expect(next.retro_nudge).toBeDefined();
+    expect(next.retro_nudge).toContain("5 task(s) resolved since last retro");
+    expect(next.retro_nudge).toContain("graph_retro");
+  });
+
+  it("graph_next has no nudge below threshold", () => {
+    const { root } = openProject("nudge-below", "Test nudge", AGENT) as any;
+
+    // Create and resolve 3 tasks (below threshold of 5)
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+        { ref: "c", parent_ref: root.id, summary: "Task C" },
+        { ref: "d", parent_ref: root.id, summary: "Task D" },
+      ],
+    }, AGENT);
+
+    for (let i = 0; i < 3; i++) {
+      handleUpdate({
+        updates: [{ node_id: plan.created[i].id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+      }, AGENT);
+    }
+
+    const next = handleNext({ project: "nudge-below" }, AGENT) as any;
+    expect(next.retro_nudge).toBeUndefined();
+  });
+
+  it("graph_next nudge resets after retro is filed", () => {
+    const { root } = openProject("nudge-reset", "Test nudge", AGENT) as any;
+
+    // Create and resolve 6 tasks
+    const refs = Array.from({ length: 6 }, (_, i) => ({
+      ref: `t${i}`, parent_ref: root.id, summary: `Task ${i}`,
+    }));
+    const plan = handlePlan({ nodes: refs }, AGENT);
+
+    for (let i = 0; i < 5; i++) {
+      handleUpdate({
+        updates: [{ node_id: plan.created[i].id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+      }, AGENT);
+    }
+
+    // Nudge should be present
+    let next = handleNext({ project: "nudge-reset" }, AGENT) as any;
+    expect(next.retro_nudge).toBeDefined();
+
+    // File a retro
+    handleRetro({
+      project: "nudge-reset",
+      findings: [{ category: "workflow_improvement", insight: "Things went well" }],
+    }, AGENT);
+
+    // Nudge should be gone (only 0 tasks resolved since retro)
+    next = handleNext({ project: "nudge-reset" }, AGENT) as any;
+    expect(next.retro_nudge).toBeUndefined();
   });
 });

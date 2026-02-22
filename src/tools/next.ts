@@ -35,6 +35,7 @@ export interface ClaimedTask {
 export interface NextResult {
   nodes: NextResultNode[];
   your_claims?: ClaimedTask[];
+  retro_nudge?: string;
 }
 
 export function handleNext(
@@ -193,6 +194,20 @@ export function handleNext(
       summary: r.summary,
       claimed_at: r.claimed_at,
     }));
+  }
+
+  // [sl:ZlreTpaeFU0SvfjJysR9k] Retro nudge when N tasks resolved since last retro
+  const RETRO_THRESHOLD = 5;
+  const lastRetro = db.prepare(
+    "SELECT updated_at FROM knowledge WHERE project = ? AND key LIKE 'retro-%' ORDER BY updated_at DESC LIMIT 1"
+  ).get(project) as { updated_at: string } | undefined;
+  const sinceDate = lastRetro?.updated_at ?? "1970-01-01T00:00:00.000Z";
+  const resolvedSince = (db.prepare(
+    "SELECT COUNT(*) as cnt FROM nodes WHERE project = ? AND resolved = 1 AND parent IS NOT NULL AND updated_at > ?"
+  ).get(project, sinceDate) as { cnt: number }).cnt;
+
+  if (resolvedSince >= RETRO_THRESHOLD) {
+    result.retro_nudge = `${resolvedSince} task(s) resolved since last retro. Consider running graph_retro({ project: "${project}" }) to capture insights.`;
   }
 
   return result;

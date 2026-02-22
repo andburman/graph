@@ -39,9 +39,9 @@ This catches work done ad-hoc or through plan files that bypassed the graph. It'
 - **low** (0-39): STOP. Show the reasons. Ask the user to confirm before working. Low confidence means critical context may be missing.
 
 ## 2. DISCOVER (when discovery is pending)
-If the project root or a task node has \`discovery: "pending"\`, you must complete discovery before decomposing it. Discovery is an interview with the user to understand what needs to happen.
+Every task starts with \`discovery: "pending"\`. This means: **confirm scope before working.** The depth of discovery depends on the task:
 
-Use AskUserQuestion to cover these areas (adapt to what's relevant — skip what's obvious):
+**For project roots and large tasks** — do a full discovery interview with the user:
 - **Scope** — What exactly needs to happen? What's explicitly out of scope?
 - **Existing patterns** — How does the codebase currently handle similar things? (explore first, then confirm)
 - **Technical approach** — What libraries, APIs, or patterns should we use?
@@ -52,7 +52,9 @@ After the interview:
 2. Flip discovery to done: \`graph_update({ updates: [{ node_id: "<id>", discovery: "done" }] })\`
 3. NOW decompose with graph_plan
 
-Do NOT skip discovery. If you try to add children to a node with \`discovery: "pending"\`, graph_plan will reject it.
+**For small, well-defined tasks** — you can use your judgment. If the task summary is specific enough that scope is obvious (e.g. "fix typo in README"), flip discovery to done with a brief note: \`graph_update({ updates: [{ node_id: "<id>", discovery: "done" }] })\`. If you're unsure, ask the user: "This task seems straightforward — should I proceed or do you want to scope it first?"
+
+**Key rule:** Never start implementation on a task with \`discovery: "pending"\`. Either do discovery or explicitly acknowledge it's not needed. If you try to add children to a node with \`discovery: "pending"\`, graph_plan will reject it. When \`graph_plan\` creates a batch, parent nodes in the batch automatically get \`discovery: "done"\` (decomposition IS discovery), while leaf nodes get \`discovery: "pending"\`.
 
 ## 3. CLAIM
 Get your next task:
@@ -126,6 +128,21 @@ When showing project state to the user, always use \`graph_status({ project: "..
 - NEVER delete resolved projects — they are the historical record. Completed projects are lightweight and preserve traceability across sessions
 - If you're approaching context limits, ensure your current task's state is captured (update with evidence even if not fully resolved) so the next agent can pick up where you left off
 
+# Graph knowledge is your first source
+
+When you need project context — design decisions, conventions, architecture rationale, environment details — check graph knowledge FIRST:
+\`\`\`
+graph_knowledge_read({ project: "<project-name>" })
+\`\`\`
+This lists all knowledge entries. Read specific entries with \`graph_knowledge_read({ project, key: "<key>" })\`.
+
+Graph knowledge is written by previous sessions specifically to help future agents. It is more reliable and relevant than searching git history, reading random files, or guessing. Only fall back to other sources if graph knowledge doesn't cover what you need.
+
+When you learn something that future sessions would benefit from (conventions, environment setup, architectural decisions, gotchas), write it:
+\`\`\`
+graph_knowledge_write({ project: "<project-name>", key: "<topic>", content: "..." })
+\`\`\`
+
 # Record observations proactively
 
 Graph is the project memory across sessions. If something isn't in Graph, it's effectively forgotten. While working, record things you notice — even if they're not part of your current task:
@@ -158,6 +175,55 @@ To unblock: \`graph_update({ updates: [{ node_id: "<id>", blocked: false }] })\`
 - Unblocking auto-clears the reason
 - Use this for things like: waiting on external input, upstream API down, needs design review
 
+# Retro — the improvement feedback loop
+
+After completing a milestone (parent auto-resolves), or when \`graph_next\` nudges you, or when the user asks — run a retro using \`graph_retro\`. This is how Graph gets smarter across sessions.
+
+## Two-phase retro flow
+
+**Phase 1: Gather context** — call without findings to see what was done:
+\`\`\`
+graph_retro({ project: "<project-name>" })
+\`\`\`
+Returns recently resolved tasks + evidence since the last retro. Use \`scope\` to focus on a subtree.
+
+**Phase 2: Submit findings** — reflect on the context, then call with structured findings:
+\`\`\`
+graph_retro({
+  project: "<project-name>",
+  findings: [
+    {
+      category: "claude_md_candidate",
+      insight: "Agents should always check graph knowledge before searching files",
+      suggestion: "Check graph_knowledge_read before searching files or git for project context"
+    },
+    { category: "knowledge_gap", insight: "No documentation on DB migration patterns" },
+    { category: "workflow_improvement", insight: "Discovery was skipped on a large task" },
+    { category: "bug_or_debt", insight: "Test suite has no coverage for edge X" }
+  ]
+})
+\`\`\`
+
+## Finding categories
+
+- **\`claude_md_candidate\`** — Behavioral patterns the *default agent* should follow. Include a \`suggestion\` field with the exact CLAUDE.md instruction text. These are the highest-value findings — they improve every future session, not just graph-aware ones.
+- **\`knowledge_gap\`** — Context that should have been in graph knowledge but wasn't. After filing, write it with \`graph_knowledge_write\`.
+- **\`workflow_improvement\`** — Changes to the graph workflow or tooling. After filing, add as graph nodes via \`graph_plan\`.
+- **\`bug_or_debt\`** — Issues discovered during work. After filing, add as graph nodes via \`graph_plan\`.
+
+## CLAUDE.md recommendations
+
+For each \`claude_md_candidate\`, tell the user: "This session revealed that agents should [behavior]. Recommend adding to CLAUDE.md: [suggestion text]." The user decides whether to add it. Never auto-modify CLAUDE.md.
+
+## When to retro
+
+- When \`graph_update\` returns a \`retro_nudge\` (milestone completed)
+- When \`graph_next\` returns a \`retro_nudge\` (5+ tasks resolved since last retro)
+- When the user explicitly asks
+- At the end of a session with significant work
+
+The retro is not optional busywork — it's the mechanism that makes agents better over time. A 5-minute retro that surfaces one good CLAUDE.md instruction saves hours across future sessions.
+
 # Common mistakes to avoid
 
 - Setting dependencies on parent nodes instead of leaf nodes
@@ -167,6 +233,7 @@ To unblock: \`graph_update({ updates: [{ node_id: "<id>", blocked: false }] })\`
 - Continuing to the next task without pausing for user review
 - Trying to decompose a node without completing discovery first
 - Not writing knowledge entries during discovery — future agents need this context
+- Skipping retros — the improvement loop is what makes Graph valuable long-term
 `;
 }
 

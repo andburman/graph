@@ -1,3 +1,4 @@
+import { getDb } from "../db.js";
 import { updateNode, getNode, getNodeOrThrow, getChildren } from "../nodes.js";
 import { findNewlyActionable } from "../edges.js";
 import { requireArray, requireString, EngineError } from "../validate.js";
@@ -26,6 +27,7 @@ export interface UpdateResult {
   updated: Array<{ node_id: string; rev: number }>;
   newly_actionable?: Array<{ id: string; summary: string }>;
   auto_resolved?: Array<{ node_id: string; summary: string }>;
+  retro_nudge?: string;
 }
 
 export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
@@ -133,6 +135,12 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
 
   if (autoResolved.length > 0) {
     result.auto_resolved = autoResolved;
+  }
+
+  // [sl:ZlreTpaeFU0SvfjJysR9k] Retro nudge on milestone completion
+  if (autoResolved.length > 0) {
+    const parentNames = autoResolved.map(a => `"${a.summary}"`).join(", ");
+    result.retro_nudge = `Milestone completed: ${parentNames} auto-resolved. Consider running graph_retro({ project: "..." }) to reflect on what worked and what didn't.`;
   }
 
   return result;

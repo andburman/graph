@@ -15,7 +15,7 @@ function rowToNode(row: NodeRow): Node {
     summary: row.summary,
     resolved: row.resolved === 1,
     depth: row.depth,
-    discovery: row.discovery ?? null,
+    discovery: row.discovery ?? "done",  // legacy nodes with NULL treated as already-discovered
     blocked: row.blocked === 1,
     blocked_reason: row.blocked_reason ?? null,
     state: row.state ? JSON.parse(row.state) : null,
@@ -61,7 +61,7 @@ export function createNode(input: CreateNodeInput): Node {
     summary: input.summary,
     resolved: false,
     depth,
-    discovery: input.discovery ?? null,
+    discovery: input.discovery ?? "pending",
     blocked: false,
     blocked_reason: null,
     state: input.state ?? null,

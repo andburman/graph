@@ -658,6 +658,8 @@ const HTML = `<!DOCTYPE html>
       overflow: hidden;
       transition: width 0.25s ease;
       flex-shrink: 0;
+      z-index: 10;
+      position: relative;
     }
     #sidebar.open { width: var(--sidebar-w); }
     .sidebar-inner {
@@ -702,11 +704,11 @@ const HTML = `<!DOCTYPE html>
     .error { color: var(--red); font-size: 13px; }
 
     /* SVG Tree */
-    .tree-link { fill: none; stroke: #1e1e2a; stroke-width: 1.2; }
-    .dep-line { stroke: #f59e0b; stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.35; }
+    .tree-link { fill: none; stroke: #55556e; stroke-width: 1.2; }
+    .dep-line { stroke: #f59e0b; stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.5; }
     .node-label { font-size: 11px; }
     .node-label.dim { opacity: 0.5; }
-    .node-label.root-label { font-size: 12px; font-weight: 600; }
+    .node-label.root-label { font-size: 14px; font-weight: 700; fill: var(--accent) !important; }
     .node-label.project-root-label { font-size: 12px; font-weight: 600; }
     .node-glow { filter: drop-shadow(0 0 4px #4a9eff); }
     @keyframes npulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
@@ -1526,7 +1528,10 @@ const HTML = `<!DOCTYPE html>
 
       var w = el.clientWidth;
       var h = el.clientHeight;
-      var R = Math.min(w, h) / 2 - 140;
+      /* Scale radius by node count so dense trees spread out */
+      var leafCount = root.leaves().length;
+      var baseR = Math.min(w, h) / 2 - 140;
+      var R = Math.max(baseR, leafCount * 12);
       if (R < 60) R = 60;
 
       d3.tree()
@@ -1549,8 +1554,11 @@ const HTML = `<!DOCTYPE html>
       /* Group layer — must exist before initial transform triggers zoom handler */
       var g = svg.append('g');
 
-      /* Initial transform: centered */
-      var initTransform = d3.zoomIdentity.translate(w/2, h/2);
+      /* Initial transform: centered, zoom-to-fit */
+      var fitScale = Math.min(w, h) / (2 * R + 100);
+      if (fitScale > 1) fitScale = 1;
+      if (fitScale < 0.3) fitScale = 0.3;
+      var initTransform = d3.zoomIdentity.translate(w/2, h/2).scale(fitScale);
       svg.call(zoomBehavior.transform, initTransform);
 
       /* Click on background to close sidebar */
@@ -1596,13 +1604,21 @@ const HTML = `<!DOCTYPE html>
           return 'rotate(' + (d.x * 180 / Math.PI - 90) + ') translate(' + d.y + ',0)';
         });
 
+      /* Root glow ring */
+      node.filter(function(d) { return d.depth === 0; }).append('circle')
+        .attr('r', 18)
+        .attr('fill', 'none')
+        .attr('stroke', 'var(--accent)')
+        .attr('stroke-width', 1.5)
+        .attr('opacity', 0.3);
+
       node.append('circle')
         .attr('r', function(d) {
-          if (d.depth === 0) return 7;
+          if (d.depth === 0) return 12;
           if (d.data.parent === '__root__') return 6;
           return d.children ? 5 : 3.5;
         })
-        .attr('fill', function(d) { return STATUS_COLORS[statuses[d.data.id]] || '#44445a'; })
+        .attr('fill', function(d) { return d.depth === 0 ? '#4a9eff' : (STATUS_COLORS[statuses[d.data.id]] || '#44445a'); })
         .attr('class', function(d) {
           var s = statuses[d.data.id];
           var c = 'node-dot';
@@ -1626,7 +1642,7 @@ const HTML = `<!DOCTYPE html>
       node.each(function(d) {
         if (!hasCollapsedChildren(d.data.id)) return;
         var sel = d3.select(this);
-        var r = d.depth === 0 ? 7 : d.data.parent === '__root__' ? 6 : (d.children ? 5 : 3.5);
+        var r = d.depth === 0 ? 12 : d.data.parent === '__root__' ? 6 : (d.children ? 5 : 3.5);
         sel.append('circle')
           .attr('class', 'collapse-ring')
           .attr('r', r + 5);
@@ -1648,7 +1664,7 @@ const HTML = `<!DOCTYPE html>
           else if (d.data.parent === '__root__') c += ' project-root-label';
           return c;
         })
-        .attr('dy', function(d) { return d.depth === 0 ? '-14' : '0.31em'; })
+        .attr('dy', function(d) { return d.depth === 0 ? '-20' : '0.31em'; })
         .attr('x', function(d) {
           if (d.depth === 0) return 0;
           return d.x < Math.PI ? 8 : -8;

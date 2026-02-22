@@ -23,6 +23,7 @@ import { handleAgentConfig } from "./tools/agent-config.js";
 import { handleTree } from "./tools/tree.js";
 import { handleStatus } from "./tools/status.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "./tools/knowledge.js";
+import { handleRetro } from "./tools/retro.js";
 import { getLicenseTier, type Tier } from "./license.js";
 import { checkNodeLimit, checkProjectLimit, capEvidenceLimit, checkScope, checkKnowledgeTier } from "./gates.js";
 
@@ -496,6 +497,36 @@ const TOOLS = [
       required: ["project", "query"],
     },
   },
+  {
+    name: "graph_retro",
+    description:
+      "Run a structured retro on recent work. Call once without findings to get context (recently resolved tasks + evidence since last retro), then call again with categorized findings. Stores retro as a knowledge entry and surfaces CLAUDE.md instruction candidates.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        project: { type: "string", description: "Project name" },
+        scope: { type: "string", description: "Optional node ID to scope the retro to a subtree" },
+        findings: {
+          type: "array",
+          description: "Structured retro findings. Omit on first call to get context.",
+          items: {
+            type: "object",
+            properties: {
+              category: {
+                type: "string",
+                enum: ["claude_md_candidate", "knowledge_gap", "workflow_improvement", "bug_or_debt"],
+                description: "Finding category",
+              },
+              insight: { type: "string", description: "What was observed" },
+              suggestion: { type: "string", description: "For claude_md_candidate: the recommended CLAUDE.md instruction text" },
+            },
+            required: ["category", "insight"],
+          },
+        },
+      },
+      required: ["project"],
+    },
+  },
 ];
 
 export async function startServer(): Promise<void> {
@@ -631,6 +662,10 @@ export async function startServer(): Promise<void> {
         case "graph_knowledge_search":
           checkKnowledgeTier(tier);
           result = handleKnowledgeSearch(args as any);
+          break;
+
+        case "graph_retro":
+          result = handleRetro(args as any, AGENT_IDENTITY);
           break;
 
         default:

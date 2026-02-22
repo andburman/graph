@@ -73,7 +73,19 @@ export function init(): void {
   const graphSection = `
 ## Graph workflow
 
-This project uses Graph for task tracking across sessions. Start every session with \`graph_onboard\` to see project state, actionable tasks, and continuity confidence. Follow the claim-work-resolve loop: \`graph_next\` (claim) → do work → \`graph_update\` (resolve with evidence). Don't execute ad-hoc work — add it to the graph first via \`graph_plan\`.
+This project uses Graph for task tracking across sessions.
+
+**Every session:** Start with \`graph_onboard\` to see project state, actionable tasks, and continuity confidence.
+
+**Claim-work-resolve loop:** \`graph_next\` (claim) → do work → \`graph_update\` (resolve with evidence). Never execute ad-hoc work — add it to the graph first via \`graph_plan\`.
+
+**Key rules:**
+- **Knowledge first.** When you need project context (design decisions, conventions, architecture), check \`graph_knowledge_read\` before searching files or git. Graph knowledge is written by previous sessions specifically for you.
+- **Always resolve with evidence.** Committing code is not enough — call \`graph_update\` with evidence (what changed, why, test results). The next agent depends on this.
+- **Pause after each task.** Show status with \`graph_status\`, then wait for the user. Don't auto-continue to the next task.
+- **Record what you notice.** Bugs, tech debt, ideas found while working — add them as nodes via \`graph_plan\`. If it's not in the graph, it's forgotten.
+- **Write knowledge for the next session.** When you learn something reusable (environment setup, conventions, gotchas), write it with \`graph_knowledge_write\`.
+- **Retro after significant work.** Reflect on friction, missed context, and repeated mistakes. Identify behavioral patterns that should become CLAUDE.md instructions — these are the highest-value findings because they improve every future session.
 `;
 
   if (existsSync(claudeMdPath)) {
