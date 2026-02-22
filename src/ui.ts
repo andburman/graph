@@ -4,7 +4,7 @@
 import { createServer, type ServerResponse } from "node:http";
 import { exec } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, extname } from "path";
 import { fileURLToPath } from "url";
 import { homedir } from "os";
 import Database from "better-sqlite3";
@@ -13,14 +13,134 @@ type Db = Database.Database;
 
 // --- JSON helpers ---
 
-function json(res: ServerResponse, data: unknown): void {
-  res.writeHead(200, { "Content-Type": "application/json" });
+function json(res: ServerResponse, data: unknown, status = 200): void {
+  res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
 }
 
 function notFound(res: ServerResponse): void {
   res.writeHead(404, { "Content-Type": "text/plain" });
   res.end("Not found");
+}
+
+function badRequest(res: ServerResponse, message: string): void {
+  res.writeHead(400, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: message }));
+}
+
+import type { IncomingMessage } from "node:http";
+
+function readBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+      catch { reject(new Error("Invalid JSON")); }
+    });
+    req.on("error", reject);
+  });
+}
+
+// [sl:viaswv2vc9qZBWc9O81RT] Write endpoints — human actions only
+
+function apiSetPriority(db: Db, nodeId: string, body: { priority: number }, res: ServerResponse): void {
+  const row = db.prepare("SELECT id, properties FROM nodes WHERE id = ?").get(nodeId) as { id: string; properties: string } | undefined;
+  if (!row) { notFound(res); return; }
+  const props = JSON.parse(row.properties);
+  props.priority = body.priority;
+  const now = new Date().toISOString();
+  db.prepare("UPDATE nodes SET properties = ?, rev = rev + 1, updated_at = ? WHERE id = ?").run(JSON.stringify(props), now, nodeId);
+  json(res, { ok: true, priority: body.priority });
+}
+
+function apiSetFlag(db: Db, nodeId: string, body: { flag: string | null }, res: ServerResponse): void {
+  const row = db.prepare("SELECT id, properties FROM nodes WHERE id = ?").get(nodeId) as { id: string; properties: string } | undefined;
+  if (!row) { notFound(res); return; }
+  const props = JSON.parse(row.properties);
+  if (body.flag === null) { delete props.flag; } else { props.flag = body.flag; }
+  const now = new Date().toISOString();
+  db.prepare("UPDATE nodes SET properties = ?, rev = rev + 1, updated_at = ? WHERE id = ?").run(JSON.stringify(props), now, nodeId);
+  json(res, { ok: true, flag: body.flag });
+}
+
+function apiArtifactResponse(db: Db, nodeId: string, body: {
+  artifact_type: "assumptions" | "decisions" | "edge_cases" | "definition_of_done";
+  artifact_id: string;
+  action: string;
+  value?: unknown;
+}, res: ServerResponse): void {
+  const row = db.prepare("SELECT id, properties FROM nodes WHERE id = ?").get(nodeId) as { id: string; properties: string } | undefined;
+  if (!row) { notFound(res); return; }
+
+  const props = JSON.parse(row.properties);
+  const artifacts = props.discovery_artifacts || {};
+  const list = artifacts[body.artifact_type] as Array<Record<string, unknown>> | undefined;
+  if (!list) { badRequest(res, `No ${body.artifact_type} artifacts`); return; }
+
+  const item = list.find((a: Record<string, unknown>) => a.id === body.artifact_id);
+  if (!item) { badRequest(res, `Artifact ${body.artifact_id} not found`); return; }
+
+  // Apply human action based on artifact type
+  switch (body.artifact_type) {
+    case "assumptions":
+      if (body.action === "validate") { item.status = "validated"; item.response = body.value ?? null; }
+      else if (body.action === "reject") { item.status = "rejected"; item.response = body.value ?? null; }
+      else { badRequest(res, "Invalid action for assumption — use validate or reject"); return; }
+      break;
+    case "decisions":
+      if (body.action === "decide") {
+        item.status = "decided";
+        if (typeof body.value === "object" && body.value !== null) {
+          const v = body.value as { answer?: string; rationale?: string };
+          if (v.answer) item.answer = v.answer;
+          if (v.rationale) item.rationale = v.rationale;
+        }
+      } else { badRequest(res, "Invalid action for decision — use decide"); return; }
+      break;
+    case "edge_cases":
+      if (body.action === "scope_in") { item.scope = "in"; item.handling = body.value ?? null; }
+      else if (body.action === "scope_out") { item.scope = "out"; item.handling = body.value ?? null; }
+      else { badRequest(res, "Invalid action for edge case — use scope_in or scope_out"); return; }
+      break;
+    case "definition_of_done":
+      if (body.action === "confirm") { item.met = true; }
+      else if (body.action === "reject") { item.met = false; }
+      else { badRequest(res, "Invalid action for DoD — use confirm or reject"); return; }
+      break;
+  }
+
+  props.discovery_artifacts = artifacts;
+  const now = new Date().toISOString();
+  db.prepare("UPDATE nodes SET properties = ?, rev = rev + 1, updated_at = ? WHERE id = ?").run(JSON.stringify(props), now, nodeId);
+  json(res, { ok: true, artifact_type: body.artifact_type, artifact_id: body.artifact_id });
+}
+
+function apiAddIdea(db: Db, body: { project: string; summary: string; parent?: string }, res: ServerResponse): void {
+  const id = `ui_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+
+  // Find parent — use project root if not specified
+  let parentId = body.parent ?? null;
+  if (!parentId) {
+    const root = db.prepare("SELECT id FROM nodes WHERE project = ? AND parent IS NULL").get(body.project) as { id: string } | undefined;
+    if (!root) { badRequest(res, `Project '${body.project}' not found`); return; }
+    parentId = root.id;
+  }
+
+  // Compute depth
+  let depth = 0;
+  if (parentId) {
+    const parentRow = db.prepare("SELECT depth FROM nodes WHERE id = ?").get(parentId) as { depth: number } | undefined;
+    if (parentRow) depth = parentRow.depth + 1;
+  }
+
+  db.prepare(`
+    INSERT INTO nodes (id, rev, parent, project, summary, resolved, depth, discovery, blocked, blocked_reason, state, properties, context_links, evidence, created_by, created_at, updated_at)
+    VALUES (?, 1, ?, ?, ?, 0, ?, 'pending', 0, NULL, NULL, '{}', '[]', '[]', 'human-ui', ?, ?)
+  `).run(id, parentId, body.project, body.summary, depth, now, now);
+
+  json(res, { ok: true, id, summary: body.summary }, 201);
 }
 
 function parseJsonField(val: string): unknown {
@@ -2451,14 +2571,51 @@ export function startUi(args: string[]): void {
   const server = createServer((req, res) => {
     // CORS headers for local dev
     res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     const url = new URL(req.url ?? "/", "http://localhost");
     const path = url.pathname;
 
-    if (req.method !== "GET") { notFound(res); return; }
+    // CORS preflight
+    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
-    // Static routes
-    if (path === "/" || path === "/index.html") {
+    // Serve Vite-built SPA assets
+    if (!path.startsWith("/api/")) {
+      const __dir = dirname(fileURLToPath(import.meta.url));
+      const uiDir = join(__dir, "ui");
+      const mimeTypes: Record<string, string> = {
+        ".html": "text/html; charset=utf-8",
+        ".js": "text/javascript",
+        ".css": "text/css",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".ico": "image/x-icon",
+        ".json": "application/json",
+      };
+
+      // Try to serve the exact file, fall back to index.html for SPA routing
+      const filePath = path === "/" || path === "/index.html"
+        ? join(uiDir, "index.html")
+        : join(uiDir, path);
+
+      if (existsSync(filePath) && !filePath.includes("..")) {
+        const ext = extname(filePath);
+        const contentType = mimeTypes[ext] || "application/octet-stream";
+        res.writeHead(200, { "Content-Type": contentType });
+        res.end(readFileSync(filePath));
+        return;
+      }
+
+      // SPA fallback — serve index.html for client-side routing
+      const indexPath = join(uiDir, "index.html");
+      if (existsSync(indexPath)) {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(readFileSync(indexPath));
+        return;
+      }
+
+      // No built UI — fall back to legacy inline HTML
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(HTML);
       return;
@@ -2468,6 +2625,13 @@ export function startUi(args: string[]): void {
       const projects = (db.prepare("SELECT COUNT(DISTINCT project) as cnt FROM nodes").get() as { cnt: number }).cnt;
       const nodes = (db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number }).cnt;
       json(res, { version: PKG_VERSION, projects, nodes });
+      return;
+    }
+
+    // [sl:HPQEBiSm4Ms25s8z-apl6] Lightweight change-detection endpoint for polling
+    if (path === "/api/changes") {
+      const row = db.prepare("SELECT MAX(updated_at) as latest, COUNT(*) as cnt FROM nodes").get() as { latest: string; cnt: number };
+      json(res, { latest: row.latest, count: row.cnt });
       return;
     }
 
@@ -2501,10 +2665,74 @@ export function startUi(args: string[]): void {
 
     // /api/nodes/:id/history
     const nodeMatch = path.match(/^\/api\/nodes\/([^/]+)\/history$/);
-    if (nodeMatch) {
+    if (nodeMatch && req.method === "GET") {
       apiNodeHistory(db, decodeURIComponent(nodeMatch[1]), res);
       return;
     }
+
+    // --- POST write endpoints (human actions) --- [sl:viaswv2vc9qZBWc9O81RT]
+    if (req.method === "POST") {
+      readBody(req).then(body => {
+        const b = body as Record<string, unknown>;
+
+        // POST /api/nodes/:id/priority
+        const priorityMatch = path.match(/^\/api\/nodes\/([^/]+)\/priority$/);
+        if (priorityMatch) {
+          if (typeof b.priority !== "number") { badRequest(res, "priority must be a number"); return; }
+          apiSetPriority(db, decodeURIComponent(priorityMatch[1]), b as { priority: number }, res);
+          return;
+        }
+
+        // POST /api/nodes/:id/flag
+        const flagMatch = path.match(/^\/api\/nodes\/([^/]+)\/flag$/);
+        if (flagMatch) {
+          apiSetFlag(db, decodeURIComponent(flagMatch[1]), b as { flag: string | null }, res);
+          return;
+        }
+
+        // POST /api/nodes/:id/artifact-response
+        const artifactMatch = path.match(/^\/api\/nodes\/([^/]+)\/artifact-response$/);
+        if (artifactMatch) {
+          if (!b.artifact_type || !b.artifact_id || !b.action) {
+            badRequest(res, "artifact_type, artifact_id, and action are required");
+            return;
+          }
+          apiArtifactResponse(db, decodeURIComponent(artifactMatch[1]), b as {
+            artifact_type: "assumptions" | "decisions" | "edge_cases" | "definition_of_done";
+            artifact_id: string; action: string; value?: unknown;
+          }, res);
+          return;
+        }
+
+        // POST /api/nodes/:id/properties — merge properties (for seeding artifacts, etc.)
+        const propsMatch = path.match(/^\/api\/nodes\/([^/]+)\/properties$/);
+        if (propsMatch) {
+          const nodeId = decodeURIComponent(propsMatch[1]);
+          const row = db.prepare("SELECT id, properties FROM nodes WHERE id = ?").get(nodeId) as { id: string; properties: string } | undefined;
+          if (!row) { notFound(res); return; }
+          const props = JSON.parse(row.properties);
+          for (const [k, v] of Object.entries(b)) {
+            if (v === null) delete props[k]; else props[k] = v;
+          }
+          const now = new Date().toISOString();
+          db.prepare("UPDATE nodes SET properties = ?, rev = rev + 1, updated_at = ? WHERE id = ?").run(JSON.stringify(props), now, nodeId);
+          json(res, { ok: true });
+          return;
+        }
+
+        // POST /api/nodes — add raw idea
+        if (path === "/api/nodes") {
+          if (!b.project || !b.summary) { badRequest(res, "project and summary are required"); return; }
+          apiAddIdea(db, b as { project: string; summary: string; parent?: string }, res);
+          return;
+        }
+
+        notFound(res);
+      }).catch(() => badRequest(res, "Invalid JSON body"));
+      return;
+    }
+
+    if (req.method !== "GET") { notFound(res); return; }
 
     notFound(res);
   });

@@ -3,10 +3,12 @@ import { getDb } from "./db.js";
 import { logEvent } from "./events.js";
 import { EngineError } from "./validate.js";
 import type { Node, NodeRow, Evidence, FieldChange } from "./types.js";
+import { computeDiscoveryPhase } from "./types.js";
 
 // --- Row <-> Node conversion ---
 
 function rowToNode(row: NodeRow): Node {
+  const properties = JSON.parse(row.properties);
   return {
     id: row.id,
     rev: row.rev,
@@ -16,10 +18,11 @@ function rowToNode(row: NodeRow): Node {
     resolved: row.resolved === 1,
     depth: row.depth,
     discovery: row.discovery ?? "done",  // legacy nodes with NULL treated as already-discovered
+    discovery_phase: computeDiscoveryPhase(properties), // [sl:yd3p9m8fDraz_Hk88wa2r]
     blocked: row.blocked === 1,
     blocked_reason: row.blocked_reason ?? null,
     state: row.state ? JSON.parse(row.state) : null,
-    properties: JSON.parse(row.properties),
+    properties,
     context_links: JSON.parse(row.context_links),
     evidence: JSON.parse(row.evidence),
     created_by: row.created_by,
@@ -53,6 +56,7 @@ export function createNode(input: CreateNodeInput): Node {
     if (parentRow) depth = parentRow.depth + 1;
   }
 
+  const properties = input.properties ?? {};
   const node: Node = {
     id,
     rev: 1,
@@ -62,10 +66,11 @@ export function createNode(input: CreateNodeInput): Node {
     resolved: false,
     depth,
     discovery: input.discovery ?? "pending",
+    discovery_phase: computeDiscoveryPhase(properties),
     blocked: false,
     blocked_reason: null,
     state: input.state ?? null,
-    properties: input.properties ?? {},
+    properties,
     context_links: input.context_links ?? [],
     evidence: [],
     created_by: input.agent,

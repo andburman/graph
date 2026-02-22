@@ -1,0 +1,102 @@
+/* Graph UI v2 — CSS Custom Properties */
+
+:root {
+  --color-bg: #0f1117;
+  --color-bg-surface: #1a1d27;
+  --color-bg-hover: #232633;
+  --color-bg-active: #2a2e3d;
+  --color-border: #2e3345;
+  --color-border-subtle: #232633;
+
+  --color-text: #e2e4ea;
+  --color-text-secondary: #9196a8;
+  --color-text-tertiary: #636982;
+
+  --color-green: #34d399;
+  --color-yellow: #fbbf24;
+  --color-orange: #f97316;
+  --color-red: #ef4444;
+  --color-blue: #60a5fa;
+  --color-purple: #a78bfa;
+
+  --color-phase-raw: var(--color-text-tertiary);
+  --color-phase-decomposed: var(--color-yellow);
+  --color-phase-in-review: var(--color-orange);
+  --color-phase-deciding: var(--color-red);
+  --color-phase-ready: var(--color-green);
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 13px;
+  --font-size-lg: 14px;
+  --font-size-xl: 16px;
+  --font-size-2xl: 20px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  --panel-width: 420px;
+
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --color-bg: #f8f9fb;
+  --color-bg-surface: #ffffff;
+  --color-bg-hover: #f0f1f4;
+  --color-bg-active: #e8e9ee;
+  --color-border: #d4d7e0;
+  --color-border-subtle: #e8e9ee;
+
+  --color-text: #1a1d27;
+  --color-text-secondary: #636982;
+  --color-text-tertiary: #9196a8;
+
+  --color-green: #059669;
+  --color-yellow: #d97706;
+  --color-orange: #ea580c;
+  --color-red: #dc2626;
+  --color-blue: #2563eb;
+  --color-purple: #7c3aed;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
+
+  color-scheme: light;
+}
+
+/* Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
