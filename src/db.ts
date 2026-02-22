@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { createHash } from "crypto";
 import { homedir } from "os";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "fs";
 
 let db: Database.Database;
 let dbPath: string;
@@ -26,6 +27,17 @@ export function getDb(): Database.Database {
     db.pragma("synchronous = FULL");
     db.pragma("foreign_keys = ON");
     migrate(db);
+
+    // [sl:ypmZLicuvKKxfEDRkKpQG] Daily automatic backup
+    if (resolvedPath !== ":memory:") {
+      try {
+        const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const existing = listBackups();
+        if (!existing.some(b => b.filename.includes(today) && b.tag === "daily")) {
+          backupDb("daily");
+        }
+      } catch {} // Don't let backup failure prevent DB access
+    }
   }
   return db;
 }
@@ -99,14 +111,23 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_knowledge_project ON knowledge(project);
   `);
 
-  // [sl:yBBVr4wcgVfWA_w8U8hQo] Migration: add depth column if it doesn't exist
-  const hasDepth = db.prepare(
-    "SELECT COUNT(*) as cnt FROM pragma_table_info('nodes') WHERE name = 'depth'"
-  ).get() as { cnt: number };
+  // Check which ALTER TABLE migrations are needed
+  const cols = new Set(
+    (db.prepare("SELECT name FROM pragma_table_info('nodes')").all() as Array<{ name: string }>)
+      .map(c => c.name)
+  );
+  const needsAlter = !cols.has("depth") || !cols.has("discovery") || !cols.has("blocked");
 
-  if (hasDepth.cnt === 0) {
+  // [sl:ypmZLicuvKKxfEDRkKpQG] Pre-migration backup before schema changes
+  if (needsAlter) {
+    const hasData = (db.prepare("SELECT COUNT(*) as cnt FROM nodes").get() as { cnt: number }).cnt > 0;
+    if (hasData) {
+      try { backupDb("pre-migrate"); } catch {}
+    }
+  }
+
+  if (!cols.has("depth")) {
     db.exec("ALTER TABLE nodes ADD COLUMN depth INTEGER NOT NULL DEFAULT 0");
-    // Backfill depths using recursive CTE
     db.exec(`
       WITH RECURSIVE tree(id, depth) AS (
         SELECT id, 0 FROM nodes WHERE parent IS NULL
@@ -118,21 +139,11 @@ function migrate(db: Database.Database): void {
     `);
   }
 
-  // [sl:AOXqUIhpW2-gdMqWATf66] Migration: add discovery column if it doesn't exist
-  const hasDiscovery = db.prepare(
-    "SELECT COUNT(*) as cnt FROM pragma_table_info('nodes') WHERE name = 'discovery'"
-  ).get() as { cnt: number };
-
-  if (hasDiscovery.cnt === 0) {
+  if (!cols.has("discovery")) {
     db.exec("ALTER TABLE nodes ADD COLUMN discovery TEXT DEFAULT NULL");
   }
 
-  // Migration: add blocked/blocked_reason columns if they don't exist
-  const hasBlocked = db.prepare(
-    "SELECT COUNT(*) as cnt FROM pragma_table_info('nodes') WHERE name = 'blocked'"
-  ).get() as { cnt: number };
-
-  if (hasBlocked.cnt === 0) {
+  if (!cols.has("blocked")) {
     db.exec("ALTER TABLE nodes ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0");
     db.exec("ALTER TABLE nodes ADD COLUMN blocked_reason TEXT DEFAULT NULL");
   }
@@ -151,5 +162,115 @@ export function closeDb(): void {
   if (db) {
     checkpointDb();
     db.close();
+  }
+}
+
+// [sl:ypmZLicuvKKxfEDRkKpQG] Built-in automatic DB backups
+
+export interface BackupInfo {
+  filename: string;
+  size: number;
+  created: string;
+  tag: string;
+}
+
+function getBackupDir(): string {
+  const resolved = dbPath ?? resolveDbPath();
+  return path.join(path.dirname(resolved), "backups");
+}
+
+export function backupDb(tag: string = "manual"): string | null {
+  const resolved = dbPath ?? resolveDbPath();
+  if (resolved === ":memory:" || !existsSync(resolved)) return null;
+
+  // Checkpoint WAL so backup file is self-contained
+  if (db) {
+    try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {}
+  }
+
+  const backupDir = getBackupDir();
+  mkdirSync(backupDir, { recursive: true });
+
+  const iso = new Date().toISOString();
+  const ts = iso.slice(0, 10).replace(/-/g, "") + "-" + iso.slice(11, 19).replace(/:/g, "");
+  const filename = `graph-${ts}-${tag}.db`;
+  const dest = path.join(backupDir, filename);
+
+  copyFileSync(resolved, dest);
+  pruneBackups(10);
+
+  return dest;
+}
+
+export function listBackups(): BackupInfo[] {
+  const backupDir = getBackupDir();
+  if (!existsSync(backupDir)) return [];
+
+  return readdirSync(backupDir)
+    .filter(f => f.startsWith("graph-") && f.endsWith(".db"))
+    .sort()
+    .reverse()
+    .map(f => {
+      const stat = statSync(path.join(backupDir, f));
+      const tagMatch = f.match(/graph-\d{8}-\d{6}-(.+)\.db/);
+      return {
+        filename: f,
+        size: stat.size,
+        created: stat.mtime.toISOString(),
+        tag: tagMatch?.[1] ?? "unknown",
+      };
+    });
+}
+
+export function restoreDb(target: string): string {
+  const backups = listBackups();
+
+  // Support numeric index (1 = most recent)
+  let filename: string;
+  const num = parseInt(target, 10);
+  if (!isNaN(num) && num >= 1 && num <= backups.length) {
+    filename = backups[num - 1].filename;
+  } else {
+    filename = target;
+  }
+
+  const backupDir = getBackupDir();
+  const backupPath = path.join(backupDir, filename);
+  if (!existsSync(backupPath)) {
+    throw new Error(`Backup not found: ${filename}`);
+  }
+
+  const resolved = dbPath ?? resolveDbPath();
+
+  // Close current DB if open
+  if (db) {
+    db.close();
+    db = undefined!;
+  }
+
+  copyFileSync(backupPath, resolved);
+
+  // Remove stale WAL/SHM files
+  for (const ext of ["-wal", "-shm"]) {
+    const p = resolved + ext;
+    if (existsSync(p)) {
+      try { unlinkSync(p); } catch {}
+    }
+  }
+
+  return filename;
+}
+
+function pruneBackups(keep: number): void {
+  const backupDir = getBackupDir();
+  if (!existsSync(backupDir)) return;
+
+  const files = readdirSync(backupDir)
+    .filter(f => f.startsWith("graph-") && f.endsWith(".db"))
+    .sort()
+    .reverse();
+
+  for (const file of files.slice(keep)) {
+    try { unlinkSync(path.join(backupDir, file)); } catch {}
   }
 }
