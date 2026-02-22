@@ -51,3 +51,4 @@ This project uses Graph for its own task tracking. Start every session with `gra
 
 - **Every change goes through the graph — no exceptions.** Even small fixes and one-line changes get a node via `graph_plan` before implementation. "It's just a quick fix" is not an excuse to bypass the workflow.
 - **Stay focused on what was asked.** Don't propose adjacent work, extra refactors, or "while we're here" improvements. If you notice something worth doing, add it as a graph node silently — don't pitch it to the user.
+- **Narrate around tool calls.** The user sees raw MCP JSON — it's unreadable. Before tool calls, explain what you're about to do and why. After, summarize what happened in plain language. When suggesting next steps, name the specific task. The narrative is what matters, not the JSON.

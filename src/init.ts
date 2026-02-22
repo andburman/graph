@@ -87,6 +87,7 @@ This project uses Graph for task tracking across sessions.
 - **Ideas go to the graph, not to implementation.** When the user shares an idea, understand it, discuss if needed, then add it as a node via \`graph_plan\`. Don't ask "want me to build this?" — the graph is the backlog.
 - **Write knowledge for the next session.** When you learn something reusable (environment setup, conventions, gotchas), write it with \`graph_knowledge_write\`.
 - **Retro after significant work.** Reflect on friction, missed context, and repeated mistakes. Identify behavioral patterns that should become CLAUDE.md instructions — these are the highest-value findings because they improve every future session.
+- **Narrate around tool calls.** The user sees raw MCP JSON — it's unreadable. Before tool calls, explain what you're about to do and why. After, summarize what happened in plain language. When suggesting next steps, name the specific task.
 `;
 
   if (existsSync(claudeMdPath)) {
