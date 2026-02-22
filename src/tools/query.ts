@@ -143,35 +143,43 @@ export function handleQuery(input: QueryInput): QueryResult {
     }
   }
 
-  // Cursor: use created_at + id for stable pagination
-  if (cursor) {
-    const [cursorTime, cursorId] = cursor.split("|");
-    conditions.push("(n.created_at > ? OR (n.created_at = ? AND n.id > ?))");
-    params.push(cursorTime, cursorTime, cursorId);
-  }
-
-  const whereClause = conditions.join(" AND ");
-
-  // Sorting
+  // [sl:8UOMOgVDsAynQMHhq9d_i] Sort-aware cursor pagination
+  // Sorting — determine order + cursor column together
   let orderBy: string;
+  let cursorCol: string;
+  let cursorDir: ">" | "<";
   switch (input.sort) {
     case "depth":
-      // Can't sort by computed depth in SQL easily, so sort by created and compute depth post-hoc
-      orderBy = "n.created_at ASC, n.id ASC";
+      orderBy = "n.depth ASC, n.id ASC";
+      cursorCol = "depth";
+      cursorDir = ">";
       break;
     case "recent":
       orderBy = "n.updated_at DESC, n.id ASC";
+      cursorCol = "updated_at";
+      cursorDir = "<";
       break;
     case "created":
       orderBy = "n.created_at ASC, n.id ASC";
+      cursorCol = "created_at";
+      cursorDir = ">";
       break;
     case "readiness":
     default:
       orderBy = "n.updated_at ASC, n.id ASC";
+      cursorCol = "updated_at";
+      cursorDir = ">";
       break;
   }
 
-  // Count total
+  if (cursor) {
+    const [cursorVal, cursorId] = cursor.split("|");
+    conditions.push(`(n.${cursorCol} ${cursorDir} ? OR (n.${cursorCol} = ? AND n.id > ?))`);
+    params.push(cursorVal, cursorVal, cursorId);
+  }
+
+  const whereClause = conditions.join(" AND ");
+
   // Count total (without cursor filter)
   const countConditions = cursor ? conditions.slice(0, -1) : conditions;
   const countParams = cursor ? params.slice(0, -3) : [...params];
@@ -201,7 +209,8 @@ export function handleQuery(input: QueryInput): QueryResult {
 
   if (hasMore) {
     const last = slice[slice.length - 1];
-    result.next_cursor = `${last.created_at}|${last.id}`;
+    const lastVal = cursorCol === "depth" ? String(last.depth) : (last as Record<string, unknown>)[cursorCol] as string;
+    result.next_cursor = `${lastVal}|${last.id}`;
   }
 
   return result;

@@ -52,14 +52,19 @@ export function addEdge(input: AddEdgeInput): AddEdgeResult {
   const db = getDb();
 
   // Check nodes exist
-  const fromExists = db.prepare("SELECT id FROM nodes WHERE id = ?").get(input.from);
-  const toExists = db.prepare("SELECT id FROM nodes WHERE id = ?").get(input.to);
+  const fromNode = db.prepare("SELECT id, project FROM nodes WHERE id = ?").get(input.from) as { id: string; project: string } | undefined;
+  const toNode = db.prepare("SELECT id, project FROM nodes WHERE id = ?").get(input.to) as { id: string; project: string } | undefined;
 
-  if (!fromExists) {
+  if (!fromNode) {
     return { edge: null, rejected: true, reason: "node_not_found: " + input.from };
   }
-  if (!toExists) {
+  if (!toNode) {
     return { edge: null, rejected: true, reason: "node_not_found: " + input.to };
+  }
+
+  // [sl:gHxxmjJq9GhDpwsAdnFRx] Reject cross-project edges
+  if (fromNode.project !== toNode.project) {
+    return { edge: null, rejected: true, reason: "cross_project_edge: cannot link nodes from different projects" };
   }
 
   // Check for duplicates

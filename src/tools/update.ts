@@ -2,6 +2,7 @@ import { getDb } from "../db.js";
 import { updateNode, getNode, getNodeOrThrow, getChildren } from "../nodes.js";
 import { findNewlyActionable } from "../edges.js";
 import { requireArray, requireString, EngineError } from "../validate.js";
+// [sl:k2dMFzFIn-gK_A9KjK6-D] Batch updates wrapped in transaction
 
 export interface UpdateEntry {
   node_id: string;
@@ -43,10 +44,13 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
     }
   }
 
+  const db = getDb();
   const updated: Array<{ node_id: string; rev: number }> = [];
   const resolvedIds: string[] = [];
   const resolvedProjects = new Set<string>();
+  const autoResolved: Array<{ node_id: string; summary: string }> = [];
 
+  const runUpdates = db.transaction(() => {
   for (const entry of updates) {
     // Optimistic concurrency: reject if rev doesn't match
     if (entry.expected_rev !== undefined) {
@@ -89,7 +93,6 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
   }
 
   // [sl:GBuFbmTFuFfnl5KWW-ja-] Auto-resolve parents when all children are resolved
-  const autoResolved: Array<{ node_id: string; summary: string }> = [];
   if (resolvedIds.length > 0) {
     const seen = new Set<string>(resolvedIds);
     const queue = [...resolvedIds];
@@ -122,6 +125,9 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
       }
     }
   }
+  }); // end transaction
+
+  runUpdates();
 
   const result: UpdateResult = { updated };
 

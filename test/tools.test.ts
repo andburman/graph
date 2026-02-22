@@ -1524,6 +1524,115 @@ describe("your_claims in graph_next (#6)", () => {
   });
 });
 
+// [sl:gHxxmjJq9GhDpwsAdnFRx] Cross-project edge validation
+describe("cross-project edge rejection", () => {
+  it("rejects edges between nodes in different projects", () => {
+    const { root: root1 } = openProject("proj-a", "Project A", AGENT) as any;
+    const { root: root2 } = openProject("proj-b", "Project B", AGENT) as any;
+    const plan1 = handlePlan({ nodes: [{ ref: "a", parent_ref: root1.id, summary: "Task A" }] }, AGENT);
+    const plan2 = handlePlan({ nodes: [{ ref: "b", parent_ref: root2.id, summary: "Task B" }] }, AGENT);
+
+    const result = handleConnect({
+      edges: [{ from: plan1.created[0].id, to: plan2.created[0].id, type: "depends_on" }],
+    }, AGENT);
+
+    expect(result.applied).toBe(0);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected![0].reason).toContain("cross_project_edge");
+  });
+
+  it("allows edges within the same project", () => {
+    const { root } = openProject("proj-same", "Project", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+      ],
+    }, AGENT);
+
+    const result = handleConnect({
+      edges: [{ from: plan.created[0].id, to: plan.created[1].id, type: "depends_on" }],
+    }, AGENT);
+
+    expect(result.applied).toBe(1);
+    expect(result.rejected).toBeUndefined();
+  });
+});
+
+// [sl:k2dMFzFIn-gK_A9KjK6-D] Batch update transaction
+describe("graph_update transaction safety", () => {
+  it("rolls back all updates when one fails", () => {
+    const { root } = openProject("tx-update", "Test", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+      ],
+    }, AGENT);
+
+    const idA = plan.created[0].id;
+    const idB = plan.created[1].id;
+
+    // Update A successfully, but B with wrong expected_rev should fail
+    expect(() => handleUpdate({
+      updates: [
+        { node_id: idA, summary: "Updated A" },
+        { node_id: idB, summary: "Updated B", expected_rev: 999 },
+      ],
+    }, AGENT)).toThrow();
+
+    // A should NOT have been updated (transaction rolled back)
+    const nodeA = handleContext({ node_id: idA });
+    expect(nodeA.node.summary).toBe("Task A");
+  });
+});
+
+// [sl:8UOMOgVDsAynQMHhq9d_i] Query depth sort and cursor
+describe("graph_query sort and cursor fixes", () => {
+  it("sorts by depth ascending", () => {
+    const { root } = openProject("qsort-depth", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [
+        { ref: "phase", parent_ref: root.id, summary: "Phase" },
+        { ref: "task", parent_ref: "phase", summary: "Deep task" },
+      ],
+    }, AGENT);
+
+    const result = handleQuery({ project: "qsort-depth", sort: "depth" });
+    const depths = result.nodes.map(n => n.depth);
+    // Should be ascending
+    for (let i = 1; i < depths.length; i++) {
+      expect(depths[i]).toBeGreaterThanOrEqual(depths[i - 1]);
+    }
+  });
+
+  it("cursor works with recent sort", () => {
+    const { root } = openProject("qsort-recent", "Test", AGENT) as any;
+    handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Task A" },
+        { ref: "b", parent_ref: root.id, summary: "Task B" },
+        { ref: "c", parent_ref: root.id, summary: "Task C" },
+      ],
+    }, AGENT);
+
+    // Fetch page 1 with limit 2
+    const page1 = handleQuery({ project: "qsort-recent", sort: "recent", limit: 2 });
+    expect(page1.nodes).toHaveLength(2);
+    expect(page1.next_cursor).toBeDefined();
+
+    // Fetch page 2 with cursor
+    const page2 = handleQuery({ project: "qsort-recent", sort: "recent", limit: 2, cursor: page1.next_cursor });
+    expect(page2.nodes.length).toBeGreaterThan(0);
+
+    // No overlap between pages
+    const page1Ids = new Set(page1.nodes.map(n => n.id));
+    for (const n of page2.nodes) {
+      expect(page1Ids.has(n.id)).toBe(false);
+    }
+  });
+});
+
 // [sl:Ufz48Frf4aeXz9ztEODKE] Auto-scope graph_next to active subtree
 describe("auto-scope graph_next", () => {
   it("auto-scopes to parent of most recent claim", () => {
