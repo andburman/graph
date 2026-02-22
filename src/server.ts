@@ -24,6 +24,7 @@ import { handleTree } from "./tools/tree.js";
 import { handleStatus } from "./tools/status.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "./tools/knowledge.js";
 import { handleRetro } from "./tools/retro.js";
+import { handleResolve } from "./tools/resolve.js";
 import { getLicenseTier, type Tier } from "./license.js";
 import { checkNodeLimit, checkProjectLimit, capEvidenceLimit, checkScope, checkKnowledgeTier } from "./gates.js";
 
@@ -523,6 +524,26 @@ const TOOLS = [
       required: ["project"],
     },
   },
+  {
+    name: "graph_resolve",
+    description:
+      "Resolve a node with auto-collected evidence. Automatically detects recent git commits and modified files since the node was claimed. Simpler than graph_update — just provide node_id and a message. Recommended way to resolve tasks.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        node_id: { type: "string", description: "Node to resolve" },
+        message: { type: "string", description: "What was done and why" },
+        test_result: { type: "string", description: "Test results summary (e.g. '203 tests passing')" },
+        commit: { type: "string", description: "Specific commit ref to use instead of auto-detection" },
+        context_links: {
+          type: "array",
+          items: { type: "string" },
+          description: "Files modified. Auto-detected from git if omitted.",
+        },
+      },
+      required: ["node_id", "message"],
+    },
+  },
 ];
 
 export async function startServer(): Promise<void> {
@@ -662,6 +683,10 @@ export async function startServer(): Promise<void> {
 
         case "graph_retro":
           result = handleRetro(args as any, AGENT_IDENTITY);
+          break;
+
+        case "graph_resolve":
+          result = handleResolve(args as any, AGENT_IDENTITY);
           break;
 
         default:

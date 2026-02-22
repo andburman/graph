@@ -15,6 +15,7 @@ import { handleTree } from "../src/tools/tree.js";
 import { handleStatus } from "../src/tools/status.js";
 import { handleKnowledgeWrite, handleKnowledgeRead, handleKnowledgeDelete, handleKnowledgeSearch } from "../src/tools/knowledge.js";
 import { handleRetro } from "../src/tools/retro.js";
+import { handleResolve } from "../src/tools/resolve.js";
 import { updateNode } from "../src/nodes.js";
 import { ValidationError, EngineError } from "../src/validate.js";
 import { computeContinuityConfidence } from "../src/continuity.js";
@@ -2322,5 +2323,119 @@ describe("retro nudges", () => {
     // Nudge should be gone (only 0 tasks resolved since retro)
     next = handleNext({ project: "nudge-reset" }, AGENT) as any;
     expect(next.retro_nudge).toBeUndefined();
+  });
+});
+
+describe("graph_resolve", () => {
+  it("resolves a node with message as note evidence", () => {
+    const { root } = openProject("resolve-basic", "Test resolve", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }],
+    }, AGENT);
+
+    const result = handleResolve({
+      node_id: plan.created[0].id,
+      message: "Implemented the feature",
+    }, AGENT) as any;
+
+    expect(result.node_id).toBe(plan.created[0].id);
+    expect(result.evidence_collected.has_note).toBe(true);
+    // git_commits depends on environment (>= 0 in CI, > 0 in local git repo)
+    expect(result.evidence_collected.git_commits).toBeGreaterThanOrEqual(0);
+  });
+
+  it("includes test_result as test evidence", () => {
+    const { root } = openProject("resolve-test", "Test resolve", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }],
+    }, AGENT);
+
+    const result = handleResolve({
+      node_id: plan.created[0].id,
+      message: "Built the thing",
+      test_result: "42 tests passing",
+    }, AGENT) as any;
+
+    expect(result.evidence_collected.has_test).toBe(true);
+    expect(result.evidence_collected.has_note).toBe(true);
+  });
+
+  it("uses explicit commit instead of auto-detection", () => {
+    const { root } = openProject("resolve-commit", "Test resolve", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }],
+    }, AGENT);
+
+    const result = handleResolve({
+      node_id: plan.created[0].id,
+      message: "Fixed the bug",
+      commit: "abc123 — Fix null pointer in handler",
+    }, AGENT) as any;
+
+    expect(result.evidence_collected.git_commits).toBe(1);
+  });
+
+  it("uses explicit context_links", () => {
+    const { root } = openProject("resolve-links", "Test resolve", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [{ ref: "a", parent_ref: root.id, summary: "Task A" }],
+    }, AGENT);
+
+    const result = handleResolve({
+      node_id: plan.created[0].id,
+      message: "Updated the files",
+      context_links: ["src/foo.ts", "src/bar.ts"],
+    }, AGENT) as any;
+
+    expect(result.evidence_collected.context_links).toBe(2);
+  });
+
+  it("triggers auto-resolve on parent when siblings are done", () => {
+    const { root } = openProject("resolve-auto", "Test resolve", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "parent", parent_ref: root.id, summary: "Parent" },
+        { ref: "a", parent_ref: "parent", summary: "Child A" },
+        { ref: "b", parent_ref: "parent", summary: "Child B" },
+      ],
+    }, AGENT);
+
+    // Resolve first child via graph_update
+    handleUpdate({
+      updates: [{ node_id: plan.created[1].id, resolved: true, add_evidence: [{ type: "note", ref: "Done A" }] }],
+    }, AGENT);
+
+    // Resolve second child via graph_resolve — should auto-resolve parent
+    const result = handleResolve({
+      node_id: plan.created[2].id,
+      message: "Done B",
+    }, AGENT) as any;
+
+    expect(result.auto_resolved).toBeDefined();
+    expect(result.auto_resolved.length).toBeGreaterThanOrEqual(1);
+    expect(result.auto_resolved[0].summary).toBe("Parent");
+  });
+
+  it("returns newly_actionable when dependencies are unblocked", () => {
+    const { root } = openProject("resolve-unblock", "Test resolve", AGENT) as any;
+    const plan = handlePlan({
+      nodes: [
+        { ref: "a", parent_ref: root.id, summary: "Blocker" },
+        { ref: "b", parent_ref: root.id, summary: "Blocked task", depends_on: ["a"] },
+      ],
+    }, AGENT);
+
+    const result = handleResolve({
+      node_id: plan.created[0].id,
+      message: "Blocker done",
+    }, AGENT) as any;
+
+    expect(result.newly_actionable).toBeDefined();
+    expect(result.newly_actionable.some((n: any) => n.summary === "Blocked task")).toBe(true);
+  });
+
+  it("throws without required fields", () => {
+    expect(() => handleResolve({ node_id: "", message: "test" } as any, AGENT)).toThrow();
+    expect(() => handleResolve({ node_id: "abc" } as any, AGENT)).toThrow();
   });
 });
