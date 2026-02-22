@@ -67,7 +67,19 @@ export function init(): void {
     wrote = true;
   }
 
-  // 3. Append graph workflow instructions to CLAUDE.md
+  // 3. Suggest .gitignore entry for agent file
+  // [sl:TSdBul_6gFbXYHvri5Wtg] Prevent dirty git from agent file auto-updates
+  const gitignorePath = join(cwd, ".gitignore");
+  if (existsSync(gitignorePath)) {
+    const gitignore = readFileSync(gitignorePath, "utf8");
+    if (!gitignore.includes(".claude/agents/graph.md")) {
+      appendFileSync(gitignorePath, "\n# Graph agent file (auto-updated by MCP server)\n.claude/agents/graph.md\n", "utf8");
+      console.log("✓ .gitignore — added .claude/agents/graph.md");
+      wrote = true;
+    }
+  }
+
+  // 4. Append graph workflow instructions to CLAUDE.md
   // [sl:qPxNQTKru6q3nPzsNWlfe] Ensure default agent follows graph workflow
   const claudeMdPath = join(cwd, "CLAUDE.md");
   const graphSection = `
