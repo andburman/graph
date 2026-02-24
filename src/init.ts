@@ -87,19 +87,21 @@ export function init(): void {
 
 This project uses Graph for task tracking across sessions.
 
+**When to use graph:** Always. When the user asks to implement, build, fix, add, refactor, update, create, change, or remove code — route through graph. No implementation without \`graph_onboard\` first. This includes "quick fixes" and "small changes" — they all go through the graph.
+
 **Every session:** Start with \`graph_onboard\` to see project state, actionable tasks, and continuity confidence.
 
-**Claim-work-resolve loop:** \`graph_next\` (claim) → do work → \`graph_update\` (resolve with evidence). Never execute ad-hoc work — add it to the graph first via \`graph_plan\`.
+**Claim-work-resolve loop:** \`graph_next\` (claim) → plan → do work → \`graph_update\` (resolve with evidence). Never execute ad-hoc work — add it to the graph first via \`graph_plan\`.
 
 **Key rules:**
 - **Knowledge first.** When you need project context (design decisions, conventions, architecture), check \`graph_knowledge_read\` before searching files or git. Graph knowledge is written by previous sessions specifically for you.
+- **Plan before coding.** After claiming a task, read the relevant code, design your approach, and record the plan on the node before writing any code. Never jump straight to implementation.
 - **Always resolve with evidence.** Committing code is not enough — call \`graph_update\` with evidence (what changed, why, test results). The next agent depends on this.
 - **Pause after each task.** Show status with \`graph_status\`, then wait for the user. Don't auto-continue to the next task.
 - **Record what you notice.** Bugs, tech debt, ideas found while working — add them as nodes via \`graph_plan\`. If it's not in the graph, it's forgotten.
 - **Ideas go to the graph, not to implementation.** When the user shares an idea, understand it, discuss if needed, then add it as a node via \`graph_plan\`. Don't ask "want me to build this?" — the graph is the backlog.
 - **Write knowledge for the next session.** When you learn something reusable (environment setup, conventions, gotchas), write it with \`graph_knowledge_write\`.
-- **Retro after significant work.** Reflect on friction, missed context, and repeated mistakes. Identify behavioral patterns that should become CLAUDE.md instructions — these are the highest-value findings because they improve every future session.
-- **Narrate around tool calls.** The user sees raw MCP JSON — it's unreadable. Before tool calls, explain what you're about to do and why. After, summarize what happened in plain language. When suggesting next steps, name the specific task.
+- **Narrate around tool calls.** The user sees raw MCP JSON — it's unreadable. Before tool calls, explain what you're about to do and why. After, summarize what happened in plain language.
 `;
 
   if (existsSync(claudeMdPath)) {

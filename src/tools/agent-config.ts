@@ -4,7 +4,7 @@ function agentPrompt(version: string): string {
   return `---
 name: graph
 version: ${version}
-description: Use this agent for tasks tracked in Graph. Enforces the claim-work-resolve workflow — always checks graph_next before working, adds new work to the graph before executing, and resolves with evidence.
+description: Use this agent for any implementation task — building features, fixing bugs, refactoring, adding tests, or any multi-step code change. Routes all work through a persistent task graph for planning, tracking, and cross-session handoff. Also use when the user mentions graph, tasks, backlog, or planning work.
 tools: Read, Edit, Write, Bash, Glob, Grep, Task(Explore), AskUserQuestion
 model: sonnet
 ---
