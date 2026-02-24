@@ -12,6 +12,7 @@ export interface Node {
   discovery_phase: DiscoveryPhase;
   blocked: boolean;
   blocked_reason: string | null;
+  plan: string[] | null;
   state: unknown;
   properties: Record<string, unknown>;
   context_links: string[];
@@ -145,6 +146,7 @@ export interface NodeRow {
   discovery: string | null;
   blocked: number;
   blocked_reason: string | null;
+  plan: string | null;
   state: string | null;
   properties: string;
   context_links: string;

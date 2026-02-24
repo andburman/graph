@@ -233,6 +233,7 @@ const TOOLS = [
               discovery: { type: "string", description: "Discovery phase status: 'pending' or 'done'. Set to 'done' after completing discovery interview." },
               blocked: { type: "boolean", description: "Manually block/unblock a node. Blocked nodes are skipped by graph_next. Use for external blockers (e.g., waiting on domain purchase, another team)." },
               blocked_reason: { type: "string", description: "Why the node is blocked. Cleared automatically when unblocking." },
+              plan: { type: "array", items: { type: "string" }, description: "Implementation plan as ordered steps. Record before coding. Set to null to clear." },
               state: { description: "Agent-defined state, any type" },
               summary: { type: "string" },
               properties: {

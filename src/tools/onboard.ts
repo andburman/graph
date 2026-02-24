@@ -183,7 +183,21 @@ function computeChecklist(
       action: `Run graph_query({ project: "${project}", filter: { properties: { _needs_verification: true } } }) to find them. After verifying, clear the flag via graph_update with properties: { _needs_verification: null }.` });
   }
 
-  // 7. plan_next_actions — check actionable tasks exist
+  // 7. check_missing_context_links — [sl:n4hDdI5Ir37Xf93mb1bE-] resolved leaves with no context_links
+  const missingLinksCount = (db.prepare(
+    `SELECT COUNT(*) as cnt FROM nodes n
+     WHERE n.project = ? AND n.resolved = 1
+     AND (n.context_links IS NULL OR n.context_links = '[]')
+     AND NOT EXISTS (SELECT 1 FROM nodes c WHERE c.parent = n.id)`
+  ).get(project) as { cnt: number }).cnt;
+  if (missingLinksCount === 0) {
+    checklist.push({ check: "check_missing_context_links", status: "pass", message: "All resolved leaves have context links." });
+  } else {
+    checklist.push({ check: "check_missing_context_links", status: "warn",
+      message: `${missingLinksCount} resolved leaf(s) have no context_links — file traceability is incomplete.` });
+  }
+
+  // 8. plan_next_actions — check actionable tasks exist
   if (actionable.length > 0) {
     checklist.push({ check: "plan_next_actions", status: "pass", message: `${actionable.length} actionable task(s) ready.` });
   } else if (summary.unresolved > 0) {

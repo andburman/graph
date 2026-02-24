@@ -12,6 +12,7 @@ export interface UpdateEntry {
   discovery?: string | null;
   blocked?: boolean;
   blocked_reason?: string | null;
+  plan?: string[] | null;
   state?: unknown;
   summary?: string;
   properties?: Record<string, unknown>;
@@ -28,6 +29,7 @@ export interface UpdateResult {
   updated: Array<{ node_id: string; rev: number }>;
   newly_actionable?: Array<{ id: string; summary: string }>;
   auto_resolved?: Array<{ node_id: string; summary: string }>;
+  evidence_warnings?: string[];
   retro_nudge?: string;
 }
 
@@ -76,6 +78,7 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
       discovery: entry.discovery,
       blocked: entry.blocked,
       blocked_reason: entry.blocked_reason,
+      plan: entry.plan,
       state: entry.state,
       summary: entry.summary,
       properties: entry.properties,
@@ -167,6 +170,43 @@ export function handleUpdate(input: UpdateInput, agent: string): UpdateResult {
 
   if (autoResolved.length > 0) {
     result.auto_resolved = autoResolved;
+  }
+
+  // [sl:28Sw7t6y1rBKRHctk7BY8] Warn on thin evidence at resolve time
+  // [sl:n4hDdI5Ir37Xf93mb1bE-] Warn on missing context links at resolve time
+  const autoResolvedIds = new Set(autoResolved.map(a => a.node_id));
+  const evidenceWarnings: string[] = [];
+  for (const entry of updates) {
+    if (entry.resolved !== true) continue;
+    if (autoResolvedIds.has(entry.node_id)) continue;
+    const node = getNode(entry.node_id);
+    if (!node) continue;
+    const ev = Array.isArray(node.evidence) ? node.evidence : [];
+    const hasGit = ev.some((e: { type: string }) => e.type === "git");
+    const hasTest = ev.some((e: { type: string }) => e.type === "test");
+    if (ev.length <= 1 || (!hasGit && !hasTest)) {
+      const missing: string[] = [];
+      if (ev.length <= 1) missing.push("only " + ev.length + " evidence entry");
+      if (!hasGit) missing.push("no git evidence");
+      if (!hasTest) missing.push("no test evidence");
+      evidenceWarnings.push(`Node "${node.summary}" (${node.id}): thin evidence — ${missing.join(", ")}. Consider adding git commits and test results for better traceability.`);
+    }
+    const links = Array.isArray(node.context_links) ? node.context_links : [];
+    const children = getChildren(node.id);
+    if (links.length === 0 && children.length === 0) {
+      evidenceWarnings.push(`Node "${node.summary}" (${node.id}): no context_links — add file paths you modified so the next agent knows what was touched.`);
+    }
+    // [sl:T_0xWAclj0nui4ZwhqEEj] Discovery gate on resolve — warn if leaf resolved with discovery:pending
+    if (node.discovery === "pending" && children.length === 0) {
+      evidenceWarnings.push(`Node "${node.summary}" (${node.id}): resolved with discovery still pending — consider running discovery first or flipping to done via graph_update.`);
+    }
+    // [sl:t2sGegBC__5J8T-SIZe2B] Plan compliance — warn if leaf resolved with no plan
+    if (!node.plan && children.length === 0) {
+      evidenceWarnings.push(`Node "${node.summary}" (${node.id}): resolved without a plan — record your approach via graph_update with plan: ["step 1", "step 2", ...] before resolving.`);
+    }
+  }
+  if (evidenceWarnings.length > 0) {
+    result.evidence_warnings = evidenceWarnings;
   }
 
   // [sl:ZlreTpaeFU0SvfjJysR9k] Retro nudge on milestone completion

@@ -21,6 +21,7 @@ function rowToNode(row: NodeRow): Node {
     discovery_phase: computeDiscoveryPhase(properties), // [sl:yd3p9m8fDraz_Hk88wa2r]
     blocked: row.blocked === 1,
     blocked_reason: row.blocked_reason ?? null,
+    plan: row.plan ? JSON.parse(row.plan) : null,
     state: row.state ? JSON.parse(row.state) : null,
     properties,
     context_links: JSON.parse(row.context_links),
@@ -38,6 +39,7 @@ export interface CreateNodeInput {
   project: string;
   summary: string;
   discovery?: string | null;
+  plan?: string[] | null;
   state?: unknown;
   properties?: Record<string, unknown>;
   context_links?: string[];
@@ -69,6 +71,7 @@ export function createNode(input: CreateNodeInput): Node {
     discovery_phase: computeDiscoveryPhase(properties),
     blocked: false,
     blocked_reason: null,
+    plan: input.plan ?? null,
     state: input.state ?? null,
     properties,
     context_links: input.context_links ?? [],
@@ -79,8 +82,8 @@ export function createNode(input: CreateNodeInput): Node {
   };
 
   db.prepare(`
-    INSERT INTO nodes (id, rev, parent, project, summary, resolved, depth, discovery, blocked, blocked_reason, state, properties, context_links, evidence, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO nodes (id, rev, parent, project, summary, resolved, depth, discovery, blocked, blocked_reason, plan, state, properties, context_links, evidence, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     node.id,
     node.rev,
@@ -92,6 +95,7 @@ export function createNode(input: CreateNodeInput): Node {
     node.discovery,
     0,
     null,
+    node.plan ? JSON.stringify(node.plan) : null,
     node.state !== null ? JSON.stringify(node.state) : null,
     JSON.stringify(node.properties),
     JSON.stringify(node.context_links),
@@ -202,6 +206,7 @@ export interface UpdateNodeInput {
   discovery?: string | null;
   blocked?: boolean;
   blocked_reason?: string | null;
+  plan?: string[] | null;
   state?: unknown;
   summary?: string;
   properties?: Record<string, unknown>;
@@ -220,6 +225,7 @@ export function updateNode(input: UpdateNodeInput): Node {
   let newDiscovery = node.discovery;
   let newBlocked = node.blocked;
   let newBlockedReason = node.blocked_reason;
+  let newPlan = node.plan;
   let newState = node.state;
   let newSummary = node.summary;
   let newProperties = { ...node.properties };
@@ -274,6 +280,11 @@ export function updateNode(input: UpdateNodeInput): Node {
   if (input.blocked_reason !== undefined && input.blocked_reason !== node.blocked_reason) {
     changes.push({ field: "blocked_reason", before: node.blocked_reason, after: input.blocked_reason });
     newBlockedReason = input.blocked_reason;
+  }
+
+  if (input.plan !== undefined) {
+    changes.push({ field: "plan", before: node.plan, after: input.plan });
+    newPlan = input.plan;
   }
 
   if (input.state !== undefined) {
@@ -345,6 +356,7 @@ export function updateNode(input: UpdateNodeInput): Node {
       discovery = ?,
       blocked = ?,
       blocked_reason = ?,
+      plan = ?,
       state = ?,
       summary = ?,
       properties = ?,
@@ -358,6 +370,7 @@ export function updateNode(input: UpdateNodeInput): Node {
     newDiscovery,
     newBlocked ? 1 : 0,
     newBlockedReason,
+    newPlan ? JSON.stringify(newPlan) : null,
     newState !== null ? JSON.stringify(newState) : null,
     newSummary,
     JSON.stringify(newProperties),

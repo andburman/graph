@@ -419,6 +419,179 @@ describe("graph_update", () => {
     );
     expect(result.updated[0].rev).toBe(3);
   });
+
+  // [sl:28Sw7t6y1rBKRHctk7BY8] Evidence quality warnings
+  it("warns on thin evidence — single note, no git or test", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Thin task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, resolved_reason: "Done" }] },
+      AGENT
+    );
+    expect(result.evidence_warnings).toBeDefined();
+    const thinWarning = result.evidence_warnings!.find(w => w.includes("thin evidence"));
+    expect(thinWarning).toBeDefined();
+    expect(thinWarning).toContain("no git");
+    expect(thinWarning).toContain("no test");
+  });
+
+  it("no warning when evidence is rich — note + git + test + context_links + discovery done", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Rich task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    handleUpdate({ updates: [{ node_id: nodeId, discovery: "done", plan: ["Step 1", "Step 2"] }] }, AGENT);
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, add_evidence: [
+        { type: "note", ref: "Implemented X" },
+        { type: "git", ref: "abc123 — did stuff" },
+        { type: "test", ref: "42 tests passing" },
+      ], add_context_links: ["src/foo.ts"] }] },
+      AGENT
+    );
+    expect(result.evidence_warnings).toBeUndefined();
+  });
+
+  it("no warning on auto-resolved parents", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [
+      { ref: "parent", parent_ref: root.id, summary: "Parent" },
+      { ref: "child", parent_ref: "parent", summary: "Child" },
+    ] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const childId = query.nodes[0].id;
+    // Resolve child with thin evidence — only child should warn, not auto-resolved parent
+    const result = handleUpdate(
+      { updates: [{ node_id: childId, resolved: true, resolved_reason: "Done" }] },
+      AGENT
+    );
+    expect(result.auto_resolved).toBeDefined();
+    expect(result.evidence_warnings).toBeDefined();
+    // Child gets warnings for thin evidence + missing context_links, but no warnings for auto-resolved parent
+    const childWarnings = result.evidence_warnings!.filter(w => w.includes("Child"));
+    expect(childWarnings.length).toBeGreaterThanOrEqual(1);
+    expect(result.evidence_warnings!.some(w => w.includes("Parent"))).toBe(false);
+  });
+
+  // [sl:n4hDdI5Ir37Xf93mb1bE-] Context link warnings
+  it("warns on missing context_links when resolving a leaf", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "No links task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, add_evidence: [
+        { type: "note", ref: "Did stuff" },
+        { type: "git", ref: "abc — commit" },
+        { type: "test", ref: "tests pass" },
+      ] }] },
+      AGENT
+    );
+    // Rich evidence but no context_links — should warn about links
+    expect(result.evidence_warnings).toBeDefined();
+    expect(result.evidence_warnings!.some(w => w.includes("context_links"))).toBe(true);
+  });
+
+  it("no context_links warning when links are provided", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Linked task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    // Flip discovery to done and add plan so no other warnings
+    handleUpdate({ updates: [{ node_id: nodeId, discovery: "done", plan: ["Step 1"] }] }, AGENT);
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, add_evidence: [
+        { type: "note", ref: "Did stuff" },
+        { type: "git", ref: "abc — commit" },
+        { type: "test", ref: "tests pass" },
+      ], add_context_links: ["src/foo.ts"] }] },
+      AGENT
+    );
+    expect(result.evidence_warnings).toBeUndefined();
+  });
+
+  // [sl:T_0xWAclj0nui4ZwhqEEj] Discovery gate warnings
+  it("warns when resolving a leaf with discovery:pending", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Undiscovered task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, add_evidence: [
+        { type: "note", ref: "Did stuff" },
+        { type: "git", ref: "abc — commit" },
+        { type: "test", ref: "tests pass" },
+      ], add_context_links: ["src/foo.ts"] }] },
+      AGENT
+    );
+    expect(result.evidence_warnings).toBeDefined();
+    expect(result.evidence_warnings!.some(w => w.includes("discovery still pending"))).toBe(true);
+  });
+
+  it("no discovery warning after flipping to done", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Discovered task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    handleUpdate({ updates: [{ node_id: nodeId, discovery: "done", plan: ["Step 1"] }] }, AGENT);
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, add_evidence: [
+        { type: "note", ref: "Did stuff" },
+        { type: "git", ref: "abc — commit" },
+        { type: "test", ref: "tests pass" },
+      ], add_context_links: ["src/foo.ts"] }] },
+      AGENT
+    );
+    expect(result.evidence_warnings).toBeUndefined();
+  });
+
+  // [sl:t2sGegBC__5J8T-SIZe2B] Plan compliance warnings
+  it("warns when resolving a leaf with no plan", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Unplanned task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    handleUpdate({ updates: [{ node_id: nodeId, discovery: "done" }] }, AGENT);
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, add_evidence: [
+        { type: "note", ref: "Did stuff" },
+        { type: "git", ref: "abc — commit" },
+        { type: "test", ref: "tests pass" },
+      ], add_context_links: ["src/foo.ts"] }] },
+      AGENT
+    );
+    expect(result.evidence_warnings).toBeDefined();
+    expect(result.evidence_warnings!.some(w => w.includes("without a plan"))).toBe(true);
+  });
+
+  it("no plan warning when plan is recorded", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Planned task" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    handleUpdate({ updates: [{ node_id: nodeId, discovery: "done", plan: ["Read code", "Implement", "Test"] }] }, AGENT);
+    const result = handleUpdate(
+      { updates: [{ node_id: nodeId, resolved: true, add_evidence: [
+        { type: "note", ref: "Did stuff" },
+        { type: "git", ref: "abc — commit" },
+        { type: "test", ref: "tests pass" },
+      ], add_context_links: ["src/foo.ts"] }] },
+      AGENT
+    );
+    expect(result.evidence_warnings).toBeUndefined();
+  });
+
+  it("stores and retrieves plan on node", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "A" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    const nodeId = query.nodes[0].id;
+    handleUpdate({ updates: [{ node_id: nodeId, plan: ["Step 1", "Step 2", "Step 3"] }] }, AGENT);
+    const ctx = handleContext({ node_id: nodeId });
+    expect(ctx.node.plan).toEqual(["Step 1", "Step 2", "Step 3"]);
+  });
 });
 
 describe("graph_connect", () => {
@@ -805,19 +978,19 @@ describe("graph_onboard checklist", () => {
       ],
     }, AGENT);
 
-    // Resolve one task with evidence
+    // Resolve one task with evidence and context_links
     const t1Id = plan.created.find((c: any) => c.ref === "t1")!.id;
     handleUpdate({
-      updates: [{ node_id: t1Id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
+      updates: [{ node_id: t1Id, resolved: true, add_evidence: [{ type: "note", ref: "Done" }], add_context_links: ["src/foo.ts"] }],
     }, AGENT);
 
     // Add knowledge
     handleKnowledgeWrite({ project: "healthy", key: "arch", content: "Architecture notes" }, AGENT);
 
     const result = handleOnboard({ project: "healthy" }) as any;
-    expect(result.checklist).toHaveLength(7);
+    expect(result.checklist).toHaveLength(8);
     const checks = result.checklist.map((c: any) => c.check);
-    expect(checks).toEqual(["review_evidence", "review_knowledge", "confirm_blockers", "check_stale", "resolve_claimed", "check_pending_verification", "plan_next_actions"]);
+    expect(checks).toEqual(["review_evidence", "review_knowledge", "confirm_blockers", "check_stale", "resolve_claimed", "check_pending_verification", "check_missing_context_links", "plan_next_actions"]);
     // All should pass for a healthy project
     for (const item of result.checklist) {
       expect(item.status).toBe("pass");
@@ -966,7 +1139,7 @@ describe("graph_onboard checklist", () => {
     openProject("empty", "Empty project", AGENT);
 
     const result = handleOnboard({ project: "empty" }) as any;
-    expect(result.checklist).toHaveLength(7);
+    expect(result.checklist).toHaveLength(8);
     // No action_required on an empty project
     const actionRequired = result.checklist.filter((c: any) => c.status === "action_required");
     expect(actionRequired).toHaveLength(0);

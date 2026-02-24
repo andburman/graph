@@ -116,7 +116,7 @@ function migrate(db: Database.Database): void {
     (db.prepare("SELECT name FROM pragma_table_info('nodes')").all() as Array<{ name: string }>)
       .map(c => c.name)
   );
-  const needsAlter = !cols.has("depth") || !cols.has("discovery") || !cols.has("blocked");
+  const needsAlter = !cols.has("depth") || !cols.has("discovery") || !cols.has("blocked") || !cols.has("plan");
 
   // [sl:ypmZLicuvKKxfEDRkKpQG] Pre-migration backup before schema changes
   if (needsAlter) {
@@ -146,6 +146,11 @@ function migrate(db: Database.Database): void {
   if (!cols.has("blocked")) {
     db.exec("ALTER TABLE nodes ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0");
     db.exec("ALTER TABLE nodes ADD COLUMN blocked_reason TEXT DEFAULT NULL");
+  }
+
+  // [sl:t2sGegBC__5J8T-SIZe2B] Dedicated plan column
+  if (!cols.has("plan")) {
+    db.exec("ALTER TABLE nodes ADD COLUMN plan TEXT DEFAULT NULL");
   }
 
   // Index on blocked status (must come after blocked column migration)
