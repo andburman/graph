@@ -325,6 +325,26 @@ describe("graph_next", () => {
     const result = handleNext({ project: "test", claim: true }, AGENT);
     expect(result.nodes[0].node.properties._claimed_by).toBe(AGENT);
   });
+
+  // [sl:t2sGegBC__5J8T-SIZe2B] Plan hint at claim time
+  it("includes plan_hint when node has no plan", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Unplanned" }] }, AGENT);
+
+    const result = handleNext({ project: "test" }, AGENT);
+    expect(result.nodes[0].plan_hint).toBeDefined();
+    expect(result.nodes[0].plan_hint).toContain("record your plan");
+  });
+
+  it("no plan_hint when node already has a plan", () => {
+    const { root } = openProject("test", "test", AGENT) as any;
+    handlePlan({ nodes: [{ ref: "a", parent_ref: root.id, summary: "Planned" }] }, AGENT);
+    const query = handleQuery({ project: "test", filter: { is_actionable: true } });
+    handleUpdate({ updates: [{ node_id: query.nodes[0].id, plan: ["Step 1", "Step 2"] }] }, AGENT);
+
+    const result = handleNext({ project: "test" }, AGENT);
+    expect(result.nodes[0].plan_hint).toBeUndefined();
+  });
 });
 
 describe("graph_context", () => {

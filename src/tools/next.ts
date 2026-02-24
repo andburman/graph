@@ -24,6 +24,7 @@ export interface NextResultNode {
     summary: string;
     evidence: Evidence[];
   }>;
+  plan_hint?: string;
 }
 
 export interface ClaimedTask {
@@ -194,8 +195,10 @@ export function handleNext(
       });
     }
 
-    return {
-      node: claim ? getNode(row.id)! : node,
+    // [sl:t2sGegBC__5J8T-SIZe2B] Plan nudge at claim time
+    const finalNode = claim ? getNode(row.id)! : node;
+    const resultNode: NextResultNode = {
+      node: finalNode,
       ancestors: ancestors.map((a) => ({ id: a.id, summary: a.summary })),
       context_links: {
         self: node.context_links,
@@ -203,6 +206,10 @@ export function handleNext(
       },
       resolved_deps,
     };
+    if (!finalNode.plan) {
+      resultNode.plan_hint = `Before coding, record your plan: graph_update({ updates: [{ node_id: "${finalNode.id}", plan: ["Step 1: ...", "Step 2: ..."] }] })`;
+    }
+    return resultNode;
   });
 
   // Surface caller's existing claims (unexpired) so they can resume or release them
