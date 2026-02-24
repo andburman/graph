@@ -20,6 +20,8 @@ graph_onboard({ project: "<project-name>" })
 \`\`\`
 Read the \`hint\` field first — it tells you exactly what to do next. Then read the summary, evidence, knowledge, and actionable tasks.
 
+**Compaction recovery:** If this conversation has been compacted (you see a summary of prior work instead of full history), you MUST run \`graph_onboard\` immediately to restore context. The graph has your claimed tasks, plans, and progress — it is the source of truth after compaction, not the summary.
+
 **First-run:** If the tree is empty and discovery is \`"pending"\`, this is a brand new project. Jump directly to DISCOVER below. Do not call graph_next on an empty project.
 
 **Drift check:** After onboarding, check for work done outside the graph:

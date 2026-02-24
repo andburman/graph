@@ -95,7 +95,7 @@ This project uses Graph for task tracking across sessions.
 
 No implementation without \`graph_onboard\` first. This includes "quick fixes" and "small changes" — they all go through the graph. When in doubt, use graph.
 
-**Every session:** Start with \`graph_onboard\` to see project state, actionable tasks, and continuity confidence.
+**Every session (and after compaction):** Start with \`graph_onboard\` to see project state, actionable tasks, and continuity confidence. If this conversation has been compacted (you see a summary of prior work instead of full history), you MUST run \`graph_onboard\` immediately to restore context — the graph has your claimed tasks, plans, and progress.
 
 **Claim-work-resolve loop:** \`graph_next\` (claim) → plan → do work → \`graph_update\` (resolve with evidence). Never execute ad-hoc work — add it to the graph first via \`graph_plan\`.
 
