@@ -392,14 +392,19 @@ const TOOLS = [
   {
     name: "graph_onboard",
     description:
-      "Single-call orientation for new agents joining a project. Returns project summary, tree structure (depth 2), recent evidence from resolved nodes (knowledge transfer), all context links, and actionable tasks. Use this as your first call when starting work on an existing project.",
+      "Single-call orientation for agents joining a project. Default (brief) returns project summary, tree structure, recommended next task, continuity confidence, and flagged issues — enough to orient and start working. Use detail: \"full\" when you need evidence history, context links, knowledge entries, and the complete checklist. Drill deeper with graph_context, graph_next, graph_status, or graph_knowledge_read as needed.",
     inputSchema: {
       type: "object" as const,
       properties: {
         project: { type: "string", description: "Project name (e.g. 'my-project'). Omit to auto-select (works when there's exactly one project)." },
+        detail: {
+          type: "string",
+          enum: ["brief", "full"],
+          description: "Response detail level. 'brief' (default) returns minimal orientation context. 'full' returns everything including evidence, context links, knowledge, and complete checklist.",
+        },
         evidence_limit: {
           type: "number",
-          description: "Max evidence entries to return (default 20, max 50)",
+          description: "Max evidence entries to return in full mode (default 20, max 50)",
         },
         strict: {
           type: "boolean",
