@@ -922,7 +922,7 @@ describe("graph_onboard", () => {
       AGENT
     );
 
-    const result = handleOnboard({ project: "test" });
+    const result = handleOnboard({ project: "test", detail: "full" });
 
     // 1. Summary
     expect(result.summary.total).toBe(6); // root + 2 phases + 3 tasks
@@ -960,7 +960,7 @@ describe("graph_onboard", () => {
     handleKnowledgeWrite({ project: "test", key: "architecture", content: "Monorepo with pnpm workspaces" }, AGENT);
     handleKnowledgeWrite({ project: "test", key: "conventions", content: "Use kebab-case for file names" }, AGENT);
 
-    const result = handleOnboard({ project: "test" });
+    const result = handleOnboard({ project: "test", detail: "full" });
     expect(result.knowledge).toHaveLength(2);
     expect(result.knowledge.map((k) => k.key).sort()).toEqual(["architecture", "conventions"]);
     expect(result.knowledge[0].updated_at).toBeDefined();
@@ -969,7 +969,7 @@ describe("graph_onboard", () => {
   it("returns empty knowledge array when none exist", () => {
     openProject("test", "Build app", AGENT);
 
-    const result = handleOnboard({ project: "test" });
+    const result = handleOnboard({ project: "test", detail: "full" });
     expect(result.knowledge).toEqual([]);
   });
 
@@ -1008,7 +1008,7 @@ describe("graph_onboard", () => {
       updates: [{ node_id: doneId, resolved: true, add_evidence: [{ type: "note", ref: "finished" }] }],
     }, AGENT);
 
-    const result = handleOnboard({ project: "returning" });
+    const result = handleOnboard({ project: "returning", detail: "full" });
     expect(result.recently_resolved.length).toBeGreaterThanOrEqual(1);
     expect(result.recently_resolved[0].summary).toBe("Completed task");
     expect(result.recently_resolved[0].agent).toBe(AGENT);
@@ -1041,7 +1041,7 @@ describe("graph_onboard", () => {
       AGENT
     );
 
-    const result = handleOnboard({ project: "test", evidence_limit: 2 });
+    const result = handleOnboard({ project: "test", detail: "full", evidence_limit: 2 });
     expect(result.recent_evidence).toHaveLength(2);
   });
 });
@@ -1065,7 +1065,7 @@ describe("graph_onboard checklist", () => {
     // Add knowledge
     handleKnowledgeWrite({ project: "healthy", key: "arch", content: "Architecture notes" }, AGENT);
 
-    const result = handleOnboard({ project: "healthy" }) as any;
+    const result = handleOnboard({ project: "healthy", detail: "full" }) as any;
     expect(result.checklist).toHaveLength(8);
     const checks = result.checklist.map((c: any) => c.check);
     expect(checks).toEqual(["review_evidence", "review_knowledge", "confirm_blockers", "check_stale", "resolve_claimed", "check_pending_verification", "check_missing_context_links", "plan_next_actions"]);
@@ -1096,7 +1096,7 @@ describe("graph_onboard checklist", () => {
     const db = getDb();
     db.prepare("UPDATE nodes SET evidence = '[]' WHERE project = ?").run("no-ev");
 
-    const result = handleOnboard({ project: "no-ev" }) as any;
+    const result = handleOnboard({ project: "no-ev", detail: "full" }) as any;
     const evCheck = result.checklist.find((c: any) => c.check === "review_evidence");
     expect(evCheck.status).toBe("action_required");
     expect(evCheck.message).toContain("resolved task(s) exist but none have evidence");
@@ -1116,7 +1116,7 @@ describe("graph_onboard checklist", () => {
       updates: [{ node_id: t1Id, blocked: true, blocked_reason: "Waiting on API key" }],
     }, AGENT);
 
-    const result = handleOnboard({ project: "blocked" }) as any;
+    const result = handleOnboard({ project: "blocked", detail: "full" }) as any;
     const blockerCheck = result.checklist.find((c: any) => c.check === "confirm_blockers");
     expect(blockerCheck.status).toBe("action_required");
     expect(blockerCheck.message).toContain("1 blocked");
@@ -1133,7 +1133,7 @@ describe("graph_onboard checklist", () => {
     const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
     db.prepare("UPDATE nodes SET updated_at = ? WHERE project = ? AND parent IS NOT NULL").run(tenDaysAgo, "stale");
 
-    const result = handleOnboard({ project: "stale" }) as any;
+    const result = handleOnboard({ project: "stale", detail: "full" }) as any;
     const staleCheck = result.checklist.find((c: any) => c.check === "check_stale");
     expect(staleCheck.status).toBe("warn");
     expect(staleCheck.message).toContain("not updated in 7+ days");
@@ -1154,7 +1154,7 @@ describe("graph_onboard checklist", () => {
       }, AGENT);
     }
 
-    const result = handleOnboard({ project: "mature" }) as any;
+    const result = handleOnboard({ project: "mature", detail: "full" }) as any;
     const knowledgeCheck = result.checklist.find((c: any) => c.check === "review_knowledge");
     expect(knowledgeCheck.status).toBe("warn");
     expect(knowledgeCheck.message).toContain("Mature project");
@@ -1172,12 +1172,12 @@ describe("graph_onboard checklist", () => {
     }, AGENT);
 
     // Without strict — no warning prefix
-    const normal = handleOnboard({ project: "strict" }) as any;
-    expect(normal.hint).not.toContain("Rehydrate checklist");
+    const normal = handleOnboard({ project: "strict", detail: "full" }) as any;
+    expect(normal.hint).not.toContain("Checklist has action items");
 
     // With strict — warning prefix present
-    const strictResult = handleOnboard({ project: "strict", strict: true }) as any;
-    expect(strictResult.hint).toContain("Rehydrate checklist has action items");
+    const strictResult = handleOnboard({ project: "strict", detail: "full", strict: true }) as any;
+    expect(strictResult.hint).toContain("Checklist has action items");
   });
 
   it("flags claimed-but-unresolved nodes as action_required", () => {
@@ -1189,7 +1189,7 @@ describe("graph_onboard checklist", () => {
     // Claim the task via graph_next
     handleNext({ project: "claimed", claim: true }, AGENT, 60);
 
-    const result = handleOnboard({ project: "claimed" }) as any;
+    const result = handleOnboard({ project: "claimed", detail: "full" }) as any;
     const claimCheck = result.checklist.find((c: any) => c.check === "resolve_claimed");
     expect(claimCheck.status).toBe("action_required");
     expect(claimCheck.message).toContain("1 claimed");
@@ -1208,7 +1208,7 @@ describe("graph_onboard checklist", () => {
       updates: [{ node_id: taskId, resolved: true, add_evidence: [{ type: "note", ref: "Done" }] }],
     }, AGENT);
 
-    const result = handleOnboard({ project: "resolved-claim" }) as any;
+    const result = handleOnboard({ project: "resolved-claim", detail: "full" }) as any;
     const claimCheck = result.checklist.find((c: any) => c.check === "resolve_claimed");
     expect(claimCheck.status).toBe("pass");
   });
@@ -1216,11 +1216,125 @@ describe("graph_onboard checklist", () => {
   it("empty project checklist is sensible (no false alarms)", () => {
     openProject("empty", "Empty project", AGENT);
 
-    const result = handleOnboard({ project: "empty" }) as any;
+    const result = handleOnboard({ project: "empty", detail: "full" }) as any;
     expect(result.checklist).toHaveLength(8);
     // No action_required on an empty project
     const actionRequired = result.checklist.filter((c: any) => c.status === "action_required");
     expect(actionRequired).toHaveLength(0);
+  });
+});
+
+describe("graph_onboard brief mode", () => {
+  beforeEach(() => initDb(":memory:"));
+
+  it("defaults to brief when detail is omitted", () => {
+    openProject("brief-default", "Brief test", AGENT);
+    const result = handleOnboard({ project: "brief-default" }) as any;
+    expect(result.detail).toBe("brief");
+  });
+
+  it("returns core fields: project, goal, summary, tree, continuity_confidence, recommended_next", () => {
+    const { root } = openProject("brief-core", "Core fields", AGENT) as any;
+    handlePlan({ nodes: [
+      { ref: "a", parent_ref: root.id, summary: "Task A", properties: { priority: 5 } },
+      { ref: "b", parent_ref: root.id, summary: "Task B" },
+    ] }, AGENT);
+
+    const result = handleOnboard({ project: "brief-core" }) as any;
+    expect(result.detail).toBe("brief");
+    expect(result.project).toBe("brief-core");
+    expect(result.goal).toBe("Core fields");
+    expect(result.summary.total).toBe(3); // root + 2 tasks
+    expect(result.tree).toHaveLength(2);
+    expect(result.continuity_confidence).toBeDefined();
+    expect(result.recommended_next).toBeDefined();
+    expect(result.recommended_next.summary).toBe("Task A");
+  });
+
+  it("omits full-mode-only fields", () => {
+    const { root } = openProject("brief-omit", "Omit test", AGENT) as any;
+    const plan = handlePlan({ nodes: [
+      { ref: "a", parent_ref: root.id, summary: "Task" },
+    ] }, AGENT);
+    handleUpdate({ updates: [{
+      node_id: plan.created[0].id,
+      resolved: true,
+      add_evidence: [{ type: "note", ref: "done" }],
+    }] }, AGENT);
+
+    const result = handleOnboard({ project: "brief-omit" }) as any;
+    expect(result.detail).toBe("brief");
+    expect(result.recent_evidence).toBeUndefined();
+    expect(result.context_links).toBeUndefined();
+    expect(result.knowledge).toBeUndefined();
+    expect(result.recently_resolved).toBeUndefined();
+    expect(result.last_activity).toBeUndefined();
+    expect(result.integrity).toBeUndefined();
+    expect(result.actionable).toBeUndefined();
+    expect(result.blocked_nodes).toBeUndefined();
+    expect(result.claimed_nodes).toBeUndefined();
+  });
+
+  it("checklist contains only non-pass items", () => {
+    const { root } = openProject("brief-issues", "Issues test", AGENT) as any;
+    const plan = handlePlan({ nodes: [
+      { ref: "a", parent_ref: root.id, summary: "Blocked task" },
+      { ref: "b", parent_ref: root.id, summary: "Free task" },
+    ] }, AGENT);
+    handleUpdate({ updates: [{ node_id: plan.created[0].id, blocked: true, blocked_reason: "External" }] }, AGENT);
+
+    const result = handleOnboard({ project: "brief-issues" }) as any;
+    expect(result.checklist.length).toBeGreaterThanOrEqual(1);
+    expect(result.checklist.every((c: any) => c.status !== "pass")).toBe(true);
+    expect(result.checklist.some((c: any) => c.check === "confirm_blockers")).toBe(true);
+  });
+
+  it("returns empty checklist for healthy project", () => {
+    const { root } = openProject("brief-healthy", "Healthy", AGENT) as any;
+    handlePlan({ nodes: [
+      { ref: "a", parent_ref: root.id, summary: "Task" },
+    ] }, AGENT);
+
+    const result = handleOnboard({ project: "brief-healthy" }) as any;
+    expect(result.checklist).toEqual([]);
+  });
+
+  it("strict mode prepends warning when issues exist", () => {
+    const { root } = openProject("brief-strict", "Strict brief", AGENT) as any;
+    const plan = handlePlan({ nodes: [
+      { ref: "a", parent_ref: root.id, summary: "Blocked" },
+    ] }, AGENT);
+    handleUpdate({ updates: [{ node_id: plan.created[0].id, blocked: true, blocked_reason: "External dep" }] }, AGENT);
+
+    const result = handleOnboard({ project: "brief-strict", strict: true }) as any;
+    expect(result.hint).toContain("Checklist has action items");
+  });
+
+  it("detail='full' returns all fields", () => {
+    const { root } = openProject("explicit-full", "Full test", AGENT) as any;
+    const plan = handlePlan({ nodes: [
+      { ref: "a", parent_ref: root.id, summary: "Task" },
+    ] }, AGENT);
+    handleUpdate({ updates: [{
+      node_id: plan.created[0].id,
+      resolved: true,
+      add_evidence: [{ type: "note", ref: "done" }],
+      add_context_links: ["src/foo.ts"],
+    }] }, AGENT);
+    handleKnowledgeWrite({ project: "explicit-full", key: "arch", content: "notes" }, AGENT);
+
+    const result = handleOnboard({ project: "explicit-full", detail: "full" }) as any;
+    expect(result.detail).toBe("full");
+    expect(result.recent_evidence).toBeDefined();
+    expect(result.context_links).toBeDefined();
+    expect(result.knowledge).toBeDefined();
+    expect(result.recently_resolved).toBeDefined();
+    expect(result.last_activity).toBeDefined();
+    expect(result.integrity).toBeDefined();
+    expect(result.actionable).toBeDefined();
+    expect(result.checklist).toBeDefined();
+    // Full mode returns all checklist items including pass
+    expect(result.checklist.length).toBe(8);
   });
 });
 
@@ -2910,7 +3024,7 @@ describe("integrity audit", () => {
       }],
     }, AGENT);
 
-    const onboard = handleOnboard({ project: "integrity-onboard" }) as any;
+    const onboard = handleOnboard({ project: "integrity-onboard", detail: "full" }) as any;
     expect(onboard.integrity).toBeDefined();
     expect(onboard.integrity.score).toBeDefined();
     expect(onboard.integrity.issue_count).toBeDefined();
@@ -3079,7 +3193,7 @@ describe("onboard UX improvements", () => {
     ] }, AGENT);
     handleUpdate({ updates: [{ node_id: plan.created[0].id, blocked: true, blocked_reason: "Waiting on design" }] }, AGENT);
 
-    const result = handleOnboard({ project: "onboard-blocked" }) as any;
+    const result = handleOnboard({ project: "onboard-blocked", detail: "full" }) as any;
     expect(result.blocked_nodes).toHaveLength(1);
     expect(result.blocked_nodes[0].id).toBe(plan.created[0].id);
     expect(result.blocked_nodes[0].reason).toBe("Waiting on design");
@@ -3095,7 +3209,7 @@ describe("onboard UX improvements", () => {
       _claimed_by: "some-agent", _claimed_at: new Date().toISOString()
     } }] }, AGENT);
 
-    const result = handleOnboard({ project: "onboard-claimed" }) as any;
+    const result = handleOnboard({ project: "onboard-claimed", detail: "full" }) as any;
     expect(result.claimed_nodes).toHaveLength(1);
     expect(result.claimed_nodes[0].claimed_by).toBe("some-agent");
     expect(result.claimed_nodes[0].age_hours).toBeGreaterThanOrEqual(0);
@@ -3108,7 +3222,7 @@ describe("onboard UX improvements", () => {
     ] }, AGENT);
     handleUpdate({ updates: [{ node_id: plan.created[0].id, blocked: true, blocked_reason: "External dep" }] }, AGENT);
 
-    const result = handleOnboard({ project: "onboard-action" }) as any;
+    const result = handleOnboard({ project: "onboard-action", detail: "full" }) as any;
     const blockerCheck = result.checklist.find((c: any) => c.check === "confirm_blockers");
     expect(blockerCheck).toBeDefined();
     expect(blockerCheck.status).toBe("action_required");
@@ -3260,7 +3374,7 @@ describe("verification checkpoints", () => {
       properties: { _needs_verification: "true" },
     }] }, AGENT);
 
-    const result = handleOnboard({ project: "verify-onboard" }) as any;
+    const result = handleOnboard({ project: "verify-onboard", detail: "full" }) as any;
     const check = result.checklist.find((c: any) => c.check === "check_pending_verification");
     expect(check).toBeDefined();
     expect(check.status).toBe("action_required");
@@ -3269,7 +3383,7 @@ describe("verification checkpoints", () => {
 
   it("passes onboard checklist when no verification pending", () => {
     openProject("verify-pass", "No verification", AGENT);
-    const result = handleOnboard({ project: "verify-pass" }) as any;
+    const result = handleOnboard({ project: "verify-pass", detail: "full" }) as any;
     const check = result.checklist.find((c: any) => c.check === "check_pending_verification");
     expect(check).toBeDefined();
     expect(check.status).toBe("pass");

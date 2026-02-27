@@ -13,6 +13,7 @@ export interface OnboardInput {
   project?: string;
   evidence_limit?: number;
   strict?: boolean;
+  detail?: "brief" | "full";
 }
 
 export interface ChecklistItem {
@@ -23,6 +24,7 @@ export interface ChecklistItem {
 }
 
 export interface OnboardResult {
+  detail: "brief" | "full";
   project: string;
   goal: string;
   discovery: string | null;
@@ -42,7 +44,17 @@ export interface OnboardResult {
     child_count: number;
     resolved_children: number;
   }>;
-  recent_evidence: Array<{
+  // [sl:Mox85EgzSfvuXq-JhMFwW] Recommended next task with rationale
+  recommended_next?: {
+    id: string;
+    summary: string;
+    rationale: string;
+  };
+  continuity_confidence: ContinuityConfidence;
+  // brief: non-pass items only; full: all items
+  checklist: Array<{ check: string; status: string; message: string }>;
+  // Full mode only — omitted in brief to reduce token cost
+  recent_evidence?: Array<{
     node_id: string;
     node_summary: string;
     type: string;
@@ -50,49 +62,41 @@ export interface OnboardResult {
     agent: string;
     timestamp: string;
   }>;
-  context_links: string[];
-  knowledge: Array<{
+  context_links?: string[];
+  knowledge?: Array<{
     key: string;
     updated_at: string;
   }>;
-  recently_resolved: Array<{
+  recently_resolved?: Array<{
     id: string;
     summary: string;
     resolved_at: string;
     agent: string;
   }>;
-  last_activity: string | null;
-  continuity_confidence: ContinuityConfidence;
-  integrity: {
+  last_activity?: string | null;
+  integrity?: {
     score: number;
     issue_count: number;
     quality_kpi: { high_quality: number; resolved: number; percentage: number };
   };
-  actionable: Array<{
+  actionable?: Array<{
     id: string;
     summary: string;
     priority: number | null;
   }>;
-  // [sl:Mox85EgzSfvuXq-JhMFwW] Recommended next task with rationale
-  recommended_next?: {
-    id: string;
-    summary: string;
-    rationale: string;
-  };
   // [sl:KCXJHZdDEnQfK9sOfrYhW] Blocked and claimed node lists
-  blocked_nodes: Array<{
+  blocked_nodes?: Array<{
     id: string;
     summary: string;
     reason: string | null;
     age_hours: number;
   }>;
-  claimed_nodes: Array<{
+  claimed_nodes?: Array<{
     id: string;
     summary: string;
     claimed_by: string;
     age_hours: number;
   }>;
-  checklist: Array<{ check: string; status: string; message: string }>;
 }
 
 function computeChecklist(
@@ -217,6 +221,7 @@ function computeChecklist(
 export function handleOnboard(input: OnboardInput): OnboardResult | { projects: ReturnType<typeof listProjects>; hint: string } {
   const evidenceLimit = optionalNumber(input?.evidence_limit, "evidence_limit", 1, 50) ?? 20;
   const strict = input?.strict === true;
+  const detail = input?.detail === "full" ? "full" : "brief";
   const db = getDb();
 
   // Auto-resolve project when not specified
@@ -419,6 +424,27 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
     age_hours: Math.floor((now - new Date(r.claimed_at).getTime()) / (60 * 60 * 1000)),
   }));
 
+  // Continuity confidence signal
+  const continuity_confidence = computeContinuityConfidence(project);
+
+  // Single-codepath checklist — strip action strings to save tokens (agents use graph_status for details)
+  const fullChecklist = computeChecklist(summary, recent_evidence, knowledgeRows, actionable, blocked_nodes, claimed_nodes, db, project);
+
+  // Recommended next task with rationale — [sl:Mox85EgzSfvuXq-JhMFwW]
+  let recommended_next: OnboardResult["recommended_next"];
+  if (actionable.length > 0) {
+    const top = actionable[0];
+    const parts: string[] = [];
+    if (top.priority) parts.push(`priority ${top.priority}`);
+    if (claimed_nodes.length > 0) parts.push(`${claimed_nodes.length} stale claim(s)`);
+    parts.push("top-ranked");
+    recommended_next = {
+      id: top.id,
+      summary: top.summary,
+      rationale: parts.join(", "),
+    };
+  }
+
   // Build hint based on project state
   let hint: string | undefined;
   if (root.discovery === "pending") {
@@ -434,24 +460,9 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
     hint = `Project is empty — use graph_plan to decompose the goal into tasks.`;
   }
 
-  // 9. Continuity confidence signal
-  const continuity_confidence = computeContinuityConfidence(project);
-
-  // 10. Integrity audit — summary only (use graph_status for full issues)
-  const fullIntegrity = computeIntegrity(project);
-  const integrity = {
-    score: fullIntegrity.score,
-    issue_count: fullIntegrity.issues.length,
-    quality_kpi: fullIntegrity.quality_kpi,
-  };
-
-  // 11. Rehydrate checklist — strip action strings to save tokens (agents use graph_status for details)
-  const fullChecklist = computeChecklist(summary, recent_evidence, knowledgeRows, actionable, blocked_nodes, claimed_nodes, db, project);
-  const checklist = fullChecklist.map(({ check, status, message }) => ({ check, status, message }));
-
   // Strict mode: prepend hint warning when action items exist
-  if (strict && checklist.some((c) => c.status === "action_required")) {
-    const prefix = "\u26A0 Rehydrate checklist has action items \u2014 review before claiming work.";
+  if (strict && fullChecklist.some((c) => c.status === "action_required")) {
+    const prefix = "\u26A0 Checklist has action items \u2014 review before claiming work.";
     hint = hint ? `${prefix}\n${hint}` : prefix;
   }
 
@@ -461,39 +472,55 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
     hint = hint ? `${hint}\n${updateHint}` : updateHint;
   }
 
-  // [sl:Mox85EgzSfvuXq-JhMFwW] Recommended next task with rationale
-  let recommended_next: OnboardResult["recommended_next"];
-  if (actionable.length > 0) {
-    const top = actionable[0];
-    const parts: string[] = [];
-    if (top.priority) parts.push(`priority ${top.priority}`);
-    if (claimed_nodes.length > 0) parts.push(`${claimed_nodes.length} stale claim(s)`);
-    parts.push("top-ranked");
-    recommended_next = {
-      id: top.id,
-      summary: top.summary,
-      rationale: parts.join(", "),
+  // Brief mode: core orientation only — skip verbose arrays to save tokens
+  if (detail === "brief") {
+    const checklist = fullChecklist
+      .filter((c) => c.status !== "pass")
+      .map(({ check, status, message }) => ({ check, status, message }));
+
+    return {
+      detail: "brief",
+      project,
+      goal: root.summary,
+      discovery: root.discovery,
+      hint,
+      summary,
+      tree,
+      recommended_next,
+      continuity_confidence,
+      checklist,
     };
   }
 
+  // Full mode: everything
+  const fullIntegrity = computeIntegrity(project);
+  const integrity = {
+    score: fullIntegrity.score,
+    issue_count: fullIntegrity.issues.length,
+    quality_kpi: fullIntegrity.quality_kpi,
+  };
+
+  const checklist = fullChecklist.map(({ check, status, message }) => ({ check, status, message }));
+
   return {
+    detail: "full",
     project,
     goal: root.summary,
     discovery: root.discovery,
     hint,
     summary,
     tree,
+    recommended_next,
+    continuity_confidence,
+    checklist,
     recent_evidence,
     context_links,
     knowledge: knowledgeRows,
     recently_resolved,
     last_activity,
-    continuity_confidence,
     integrity,
     actionable,
-    recommended_next,
     blocked_nodes,
     claimed_nodes,
-    checklist,
   };
 }
