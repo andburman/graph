@@ -440,10 +440,11 @@ export function getProjectSummary(project: string): {
     .get(project, project) as { count: number };
 
   // Actionable: unresolved leaves (no unresolved children) with all deps resolved and not manually blocked
+  // [sl:sUJf8RKzDV8-XerhknAfg] Exclude root node — must match onboard's actionable array filter
   const actionable = db
     .prepare(
       `SELECT COUNT(*) as count FROM nodes n
-       WHERE n.project = ? AND n.resolved = 0 AND n.blocked = 0
+       WHERE n.project = ? AND n.parent IS NOT NULL AND n.resolved = 0 AND n.blocked = 0
        AND NOT EXISTS (
          SELECT 1 FROM nodes child WHERE child.parent = n.id AND child.resolved = 0
        )

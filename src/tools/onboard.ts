@@ -470,11 +470,11 @@ export function handleOnboard(input: OnboardInput): OnboardResult | { projects: 
   let hint: string | undefined;
   if (root.discovery === "pending") {
     hint = `Discovery is pending. Interview the user to understand scope and goals, write knowledge entries with findings, then set discovery to "done" via graph_update before decomposing with graph_plan.`;
-  } else if (actionable.length > 0) {
+  } else if (summary.actionable > 0) {
     const recentNote = recently_resolved.length > 0
       ? ` ${recently_resolved.length} task(s) resolved recently.`
       : "";
-    hint = `${actionable.length} actionable task(s) ready.${recentNote} Use graph_next({ project: "${project}", claim: true }) to claim one.`;
+    hint = `${summary.actionable} actionable task(s) ready.${recentNote} Use graph_next({ project: "${project}", claim: true }) to claim one.`;
   } else if (summary.unresolved > 0 && summary.actionable === 0) {
     hint = `All remaining tasks are blocked. Check dependencies with graph_query.`;
   } else if (summary.total <= 1 && root.discovery !== "pending") {

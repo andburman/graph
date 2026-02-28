@@ -205,11 +205,14 @@ export function handleStatus(input: StatusInput): StatusResult | { projects: Ret
         line += `\n${prefix}    ^ ${entry.blocked_reason}`;
       }
 
-      // Dependency blocked — show what it's waiting on
+      // [sl:x5xM9gI8q45Aunr84YzJK] Dependency blocked — show what it's waiting on (truncated)
       if (entry.dep_blocked && !entry.resolved && !entry.blocked) {
         const deps = depMap.get(entry.id);
         if (deps && deps.length > 0) {
-          const depList = deps.length <= 2 ? deps.join(", ") : `${deps[0]} +${deps.length - 1} more`;
+          const truncate = (s: string) => s.length > 50 ? s.slice(0, 47) + "..." : s;
+          const depList = deps.length <= 2
+            ? deps.map(truncate).join(", ")
+            : `${truncate(deps[0])} +${deps.length - 1} more`;
           line += `\n${prefix}    ^ waiting on: ${depList}`;
         }
       }

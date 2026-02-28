@@ -68,7 +68,8 @@ async function checkForUpdate(): Promise<void> {
     if (!res.ok) return;
     const data = await res.json() as { version: string };
     if (data.version !== PKG_VERSION) {
-      updateWarning = `[graph] Update available: ${PKG_VERSION} → ${data.version}. Run: graph update (or npx @graph-tl/graph update)`;
+      // [sl:LcyI1Q2P03qTOmaSkeio_] Include restart hint — MCP server caches the old version
+      updateWarning = `[graph] Update available: ${PKG_VERSION} → ${data.version}. Run: graph update — then restart your IDE/CLI to activate.`;
     }
   } catch {}
 }
